@@ -62,10 +62,9 @@ struct mcp_response
 
     mcp_response &set_id(const JsonVariant &id);
     mcp_response &set_error(error_code code, const String &message);
-    mcp_response &set_result(const JsonObject &result);
     JsonObject create_result();
 
-    std::tuple<int, const String &, const String &> get_http_response() const;
+    std::tuple<int, String, String> get_http_response() const;
 
 private:
     JsonDocument doc_;

@@ -48,18 +48,12 @@ mcp_response &mcp_response::set_error(error_code code, const String &message)
     return *this;
 }
 
-mcp_response &mcp_response::set_result(const JsonObject &result)
-{
-    root_["result"] = result;
-    return *this;
-}
-
 JsonObject mcp_response::create_result()
 {
-    return root_["result"].to<JsonObject>();
+    return root_["result"].as<JsonObject>();
 }
 
-std::tuple<int, const String &, const String &> mcp_response::get_http_response() const
+std::tuple<int, String, String> mcp_response::get_http_response() const
 {
     String json;
     try
@@ -68,11 +62,11 @@ std::tuple<int, const String &, const String &> mcp_response::get_http_response(
     }
     catch (const std::exception &e)
     {
-        return {500, "text/plain", "Internal Server Error: " + String(e.what())}; // Internal Server Error
+        return {500, String("text/plain"), String("Internal Server Error: ") + String(e.what())}; // Internal Server Error
     }
 
     if (root_["error"].is<JsonObject>())
-        return {400, "application/json", json}; // Bad Request
+        return {400, String("application/json"), json}; // Bad Request
 
-    return {200, "application/json", json}; // OK
+    return {200, String("application/json"), json}; // OK
 }
