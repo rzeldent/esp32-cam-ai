@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "mcp-esp32-cam-ai": {
+      "type": "http",
+      "url": "http://192.168.1.132"
+    }
+  }
+}
