@@ -247,7 +247,10 @@ void tool_capture(JsonObject arguments, mcp_response &response)
 
   auto flash = arguments["flash"].as<String>();
   if (flash == "on")
+  {
     digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
+    delay(20); // Allow flash to stabilize
+  }
 
   auto fb = esp_camera_fb_get();
 

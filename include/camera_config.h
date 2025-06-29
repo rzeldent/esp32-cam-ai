@@ -49,9 +49,8 @@ constexpr camera_config_t esp32cam_aithinker_settings = {
     .ledc_channel = LEDC_CHANNEL_1,
     .pixel_format = PIXFORMAT_JPEG,
     //.frame_size = FRAMESIZE_SVGA,
-    //.jpeg_quality = 12,
     .frame_size = FRAMESIZE_QVGA,
-    .jpeg_quality = 24,
+    .jpeg_quality = 12,
     .fb_count = 2};
 
 constexpr camera_config_t esp32cam_ttgo_t_settings = {
