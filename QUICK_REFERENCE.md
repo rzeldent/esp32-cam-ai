@@ -15,14 +15,15 @@ pio device monitor
 ```
 
 ### Basic Configuration
-```ini
-# platformio.ini
-build_flags = 
-    -DWIFI_SSID=\"YourWiFiNetwork\"
-    -DWIFI_PASSWORD=\"YourPassword\"
-    -DLED_GPIO=33
-    -DFLASH_GPIO=4
+
+Create a `.env` file in the project root:
+```properties
+# .env file
+WIFI_SSID="YourWiFiNetwork"
+WIFI_PASSWORD="YourPassword"
 ```
+
+**Note**: The `.env` file is required for building. GPIO pins are pre-configured in `platformio.ini`.
 
 ### Camera Orientation
 

@@ -138,7 +138,7 @@ The camera lens should face the target while the small flash LED (adjacent to th
 ### Build Process
 1. **Environment Setup**: PlatformIO with ESP32 platform
 2. **Dependency Management**: ArduinoJson, Base64, ESP32 Camera libraries
-3. **Configuration**: WiFi credentials and GPIO pin assignments
+3. **Configuration**: WiFi credentials (via .env file) and GPIO pin assignments
 4. **Compilation**: C++ compilation with Arduino framework
 5. **Upload**: Serial upload to ESP32-CAM module
 
@@ -410,22 +410,26 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 - Check network connectivity
 - Monitor system performance
 
-## Additional Resources
+## Configuration Management
 
-### Documentation
-- [ESP32-CAM Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-cam_datasheet_en.pdf)
-- [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
-- [PlatformIO ESP32 Guide](https://docs.platformio.org/en/latest/platforms/espressif32.html)
+### WiFi Credentials via .env File
+The project uses a `.env` file for secure WiFi credential management:
 
-### Libraries and Dependencies
-- [ArduinoJson](https://arduinojson.org/) - JSON parsing and generation
-- [ESP32 Camera](https://github.com/espressif/esp32-camera) - Camera driver
-- [Base64](https://github.com/dantudor/Base64) - Encoding/decoding
+```properties
+# .env file format
+WIFI_SSID="YourWiFiNetwork"
+WIFI_PASSWORD="YourPassword"
+```
 
-### Community and Support
-- [ESP32 Forum](https://www.esp32.com/)
-- [PlatformIO Community](https://community.platformio.org/)
-- [GitHub Issues](https://github.com/yourusername/ESP32-CAM-AI/issues)
+**Build System Integration:**
+- `env-extra.py` script automatically reads `.env` file during build
+- Credentials are passed as compile-time definitions
+- Build fails with clear error messages if `.env` is missing
+
+**Security Considerations:**
+- `.env` file should be excluded from version control
+- Credentials are compiled into firmware (not runtime configurable)
+- No plain-text credential storage in source code
 
 ---
 

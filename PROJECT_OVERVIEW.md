@@ -23,13 +23,10 @@ This project transforms an ESP32-CAM module into a remotely controllable camera 
 
 ## Installation
 
-1. Configure WiFi credentials in `platformio.ini`:
-```ini
-build_flags = 
-    -DWIFI_SSID=\"YourNetwork\"
-    -DWIFI_PASSWORD=\"YourPassword\"
-    -DLED_GPIO=33
-    -DFLASH_GPIO=4
+1. Create a `.env` file in the project root with WiFi credentials:
+```properties
+WIFI_SSID="YourNetwork"
+WIFI_PASSWORD="YourPassword"
 ```
 
 2. Build and upload:

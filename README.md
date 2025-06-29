@@ -81,17 +81,21 @@ git clone https://github.com/yourusername/ESP32-CAM-AI.git
 cd ESP32-CAM-AI
 ```
 
-### 2. Configure WiFi
-Set your WiFi credentials in `platformio.ini` or as environment variables:
-```ini
-build_flags = 
-    -DWIFI_SSID=\"YourWiFiNetwork\"
-    -DWIFI_PASSWORD=\"YourPassword\"
-    -DLED_GPIO=33
-    -DFLASH_GPIO=4
+### 2. Configure WiFi Credentials
+
+Create a `.env` file in the project root directory with your WiFi credentials:
+
+```properties
+WIFI_SSID="YourWiFiNetwork"
+WIFI_PASSWORD="YourPassword"
 ```
 
+**Important**: The `.env` file is required for the project to build successfully. The build system automatically reads these credentials and passes them to the firmware during compilation.
+
+**Note**: For security reasons, the `.env` file should not be committed to version control. Make sure it's included in your `.gitignore` file.
+
 ### 3. Build and Upload
+
 ```bash
 pio run --target upload
 ```
@@ -356,9 +360,26 @@ Camera init failed with error 0x[code]
 Failed to connect to WiFi. Error code: [code]
 ```
 **Solutions:**
-- Verify SSID and password
-- Check 2.4GHz network availability
+- Verify SSID and password in `.env` file
+- Ensure `.env` file exists in project root directory
+- Check 2.4GHz network availability (ESP32 doesn't support 5GHz)
 - Ensure adequate signal strength
+- Verify `.env` file format is correct (no spaces around =)
+
+#### Build Errors
+```
+WIFI_SSID is not defined. Please define it in your environment variables or in the code.
+WIFI_PASSWORD is not defined. Please define it in your environment variables or in the code.
+```
+**Solutions:**
+- Create a `.env` file in the project root directory
+- Add WiFi credentials to `.env` file in the correct format:
+  ```properties
+  WIFI_SSID="YourNetworkName"
+  WIFI_PASSWORD="YourPassword"
+  ```
+- Ensure no spaces around the `=` sign
+- Use quotes around values containing special characters or spaces
 
 #### Memory Issues
 ```cpp
