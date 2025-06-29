@@ -1,73 +1,87 @@
-# ESP32-CAM AI MCP Server
+# ESP32-CAM MCP Server
 
-A robust Model Context Protocol (MCP) server implementation for ESP32-CAM that enables remote camera control, LED management, and system monitoring through standardized MCP tools.
+A Model Context Protocol (MCP) server implementation for ESP32-CAM that enables remote camera control, LED management, and system monitoring through standardized MCP tools.
 
-## 🎯 Overview
+## Overview
 
 This project transforms an ESP32-CAM into a remotely controllable MCP server that can capture images, control LEDs, manage flash lighting, and provide system diagnostics. The server exposes these capabilities through the Model Context Protocol, making it easy to integrate with AI assistants and automation systems.
 
-## ✨ Features
+**Important Note**: Images are automatically optimized to stay below 4KB base64 encoding to comply with AI client data limitations.
 
-### 🔧 **Hardware Control Tools**
+## Features
+
+### Hardware Control Tools
 - **LED Control**: Turn the ESP32-CAM's built-in LED on/off
 - **Flash Control**: Trigger camera flash with configurable duration (5-100ms)
-- **Camera Capture**: Take photos with optional flash support
+- **Camera Capture**: Take photos with optional flash support (optimized for <4KB base64)
 - **Real-time Control**: Instant response to MCP tool calls
 
-### 📊 **System Monitoring**
+### System Monitoring
 - **WiFi Status**: Network connection information, signal strength, IP address
 - **System Status**: Memory usage, uptime, CPU frequency, SDK version
 - **Hardware Info**: Flash storage, sketch size, reset reasons
 
-### 🌐 **Network Features**
+### Network Features
 - **WiFi Auto-reconnection**: Robust connection management with automatic recovery
 - **mDNS Support**: Easy device discovery on local network
 - **OTA Updates**: Over-the-air firmware updates
 - **Watchdog Timer**: System reliability and crash recovery
+- **CORS Support**: Cross-Origin Resource Sharing headers for web browser compatibility
 
-### 🔌 **MCP Protocol Support**
+### MCP Protocol Support
 - **Standard Compliance**: Full MCP 2024-11-05 protocol implementation
 - **Tool Schema**: Proper JSON schema validation for all tools
 - **Error Handling**: Comprehensive error reporting with proper codes
 - **Notifications**: Support for `notifications/initialized`
 
-## 🛠️ Hardware Requirements
+## Hardware Requirements
 
-### **Supported Boards**
+### Supported Boards
 - **AI-Thinker ESP32-CAM** (Primary target)
 - ESP32-CAM TTGO T-Series
 - ESP32-CAM M5Stack
 - ESP32-CAM Wrover Kit
 
-### **Connections**
+### Connections
 - **Camera**: OV2640 sensor (built-in)
 - **LED**: Built-in LED (configurable GPIO)
 - **Flash**: Built-in flash LED (configurable GPIO)
 - **Power**: 5V via USB or external supply
 - **Programming**: FTDI USB-to-Serial adapter (for initial upload)
 
-## 📋 Prerequisites
+### Camera Orientation
 
-### **Development Environment**
+**Important**: For optimal image capture, position the ESP32-CAM with the **flash LED facing downward**. This orientation:
+
+- Provides proper lighting direction for subjects
+- Prevents flash reflection issues
+- Ensures natural-looking illumination in photos
+- Matches the expected perspective for most use cases
+
+The camera lens should face the subject while the small flash LED (usually next to the lens) points downward toward the surface or subject being photographed.
+
+## Prerequisites
+
+### Development Environment
 - [PlatformIO](https://platformio.org/) IDE or CLI
 - [Visual Studio Code](https://code.visualstudio.com/) (recommended)
 - ESP32 development framework
 
-### **Libraries**
+### Libraries
 - `ArduinoJson` - JSON parsing and generation
 - `ESP32 Camera` - Camera functionality
 - `Base64` - Image encoding
 - Custom MCP library (included)
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. **Clone Repository**
+### 1. Clone Repository
 ```bash
 git clone https://github.com/yourusername/ESP32-CAM-AI.git
 cd ESP32-CAM-AI
 ```
 
-### 2. **Configure WiFi**
+### 2. Configure WiFi
 Set your WiFi credentials in `platformio.ini` or as environment variables:
 ```ini
 build_flags = 
@@ -77,12 +91,12 @@ build_flags =
     -DFLASH_GPIO=4
 ```
 
-### 3. **Build and Upload**
+### 3. Build and Upload
 ```bash
 pio run --target upload
 ```
 
-### 4. **Monitor Serial Output**
+### 4. Monitor Serial Output
 ```bash
 pio device monitor
 ```
@@ -92,9 +106,9 @@ Look for the IP address in the serial output:
 Local IP address: 192.168.1.132
 ```
 
-## 🔧 Configuration
+## Configuration
 
-### **Camera Settings**
+### Camera Settings
 The project includes multiple camera configurations in `include/camera_config.h`:
 
 ```cpp
@@ -104,13 +118,13 @@ constexpr camera_config_t esp32cam_aithinker_settings = {
     .pin_reset = -1,
     .pin_xclk = 0,
     // ... pin configuration
-    .frame_size = FRAMESIZE_QVGA,  // 320x240 pixels
+    .frame_size = FRAMESIZE_QVGA,  // 320x240 pixels (optimized for 4KB limit)
     .jpeg_quality = 12,            // Higher = better quality
     .fb_count = 2
 };
 ```
 
-### **GPIO Configuration**
+### GPIO Configuration
 Configure LED and Flash pins in your build flags:
 ```ini
 build_flags = 
@@ -118,9 +132,9 @@ build_flags =
     -DFLASH_GPIO=4     # Flash LED pin
 ```
 
-## 📡 MCP Tools Reference
+## MCP Tools Reference
 
-### **🔴 LED Control**
+### LED Control
 Controls the ESP32-CAM's built-in LED state.
 
 **Parameters:**
@@ -138,7 +152,7 @@ Controls the ESP32-CAM's built-in LED state.
 }
 ```
 
-### **💡 Flash Control**
+### Flash Control
 Triggers the camera flash for a specified duration.
 
 **Parameters:**
@@ -156,7 +170,7 @@ Triggers the camera flash for a specified duration.
 }
 ```
 
-### **📸 Camera Capture**
+### Camera Capture
 Captures a photo from the ESP32-CAM sensor.
 
 **Parameters:**
@@ -164,7 +178,7 @@ Captures a photo from the ESP32-CAM sensor.
 
 **Response:**
 - Text status message
-- Base64-encoded JPEG image data
+- Base64-encoded JPEG image data (optimized to stay under 4KB)
 - Image metadata (size, MIME type)
 
 **Example:**
@@ -179,7 +193,7 @@ Captures a photo from the ESP32-CAM sensor.
 }
 ```
 
-### **📶 WiFi Status**
+### WiFi Status
 Returns current network connection information.
 
 **No parameters required.**
@@ -191,30 +205,50 @@ Returns current network connection information.
 - Gateway IP
 - DNS Server
 
-### **💻 System Status**
-Provides comprehensive system diagnostics.
+### System Status
+Provides comprehensive system diagnostics and health monitoring.
 
 **No parameters required.**
 
 **Response includes:**
-- Uptime (seconds)
-- Memory usage (free/min/max heap)
-- CPU frequency
-- Flash storage information
-- SDK version
-- Reset reason
-- Camera initialization status
 
-## 🌟 Usage Examples
+**Hardware Information:**
+- **CPU Frequency**: Operating frequency in MHz (typically 240 MHz)
+- **Flash Size**: Total flash memory in bytes (typically 4MB)
+- **Flash Speed**: Flash memory clock speed in Hz (typically 40MHz)
+- **Internal Temperature**: ESP32 chip temperature in Celsius
 
-### **Direct HTTP Requests**
+**Memory Statistics:**
+- **Free Heap**: Currently available RAM in bytes
+- **Min Free Heap**: Minimum free heap since boot (memory pressure indicator)
+- **Max Alloc Heap**: Maximum contiguous memory block available
+- **Sketch Size**: Compiled firmware size in bytes
+- **Free Sketch Space**: Available space for firmware updates
+
+**System Information:**
+- **Uptime**: Time since last boot in seconds
+- **SDK Version**: ESP-IDF framework version
+- **Reset Reason**: Why the system last restarted (1=power-on, 2=external reset, 3=software reset, 12=brownout, 14=watchdog)
+
+**Device Status:**
+- **Camera Initialized**: Camera readiness status with error codes if failed
+
+**Temperature Monitoring Guidelines:**
+- Normal: 40-60°C | Heavy Load: 60-75°C | Warning: >75°C | Critical: >85°C
+
+**Memory Health Indicators:**
+- Healthy: >100KB free | Moderate: 50-100KB | High pressure: <50KB | Critical: <30KB
+
+## Usage Examples
+
+### Direct HTTP Requests
 ```powershell
 # Capture image with flash
 $body = '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "capture", "arguments": {"flash": "on"}}}'
 Invoke-RestMethod -Uri "http://192.168.1.132/" -Method Post -Body $body -ContentType "application/json"
 ```
 
-### **Integration with AI Assistants**
+### Integration with AI Assistants
 The MCP server can be integrated with AI assistants that support the Model Context Protocol:
 
 1. **Configure MCP Client** (`mcp.json`):
@@ -235,14 +269,14 @@ The MCP server can be integrated with AI assistants that support the Model Conte
    - "Check the WiFi status"
    - "Flash the camera"
 
-### **Automation Integration**
+### Automation Integration
 - **Home Assistant**: Create automations triggered by camera captures
 - **Node-RED**: Build visual workflows with camera and LED control
 - **Custom Applications**: Integrate via standard HTTP requests
 
-## 🏗️ Architecture
+## Architecture
 
-### **Core Components**
+### Core Components
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -266,7 +300,7 @@ The MCP server can be integrated with AI assistants that support the Model Conte
                     └─────────────────┘
 ```
 
-### **Code Structure**
+### Code Structure
 ```
 ESP32-CAM-AI/
 ├── src/
@@ -282,31 +316,31 @@ ESP32-CAM-AI/
 └── platformio.ini           # Build configuration
 ```
 
-## 🛡️ Reliability Features
+## Reliability Features
 
-### **WiFi Management**
+### WiFi Management
 - **Auto-reconnection**: Automatic retry with exponential backoff
 - **Connection monitoring**: Periodic status checks every 5 seconds
 - **Recovery mechanisms**: System restart after max failed attempts
 - **Event handling**: Proper WiFi event management
 
-### **System Stability**
+### System Stability
 - **Watchdog Timer**: 10-second timeout prevents system hangs
 - **Memory Management**: Proper cleanup of camera frame buffers
 - **Error Handling**: Comprehensive error codes and messages
 - **OTA Support**: Remote firmware updates for maintenance
 
-### **Camera Management**
+### Camera Management
 - **Initialization Checks**: Verify camera before operations
 - **Frame Buffer Management**: Proper allocation and cleanup
 - **Flash Timing**: Synchronized flash and capture timing
 - **Quality Settings**: Configurable resolution and compression
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
-### **Common Issues**
+### Common Issues
 
-#### **Camera Not Working**
+#### Camera Not Working
 ```cpp
 // Check camera initialization in serial output
 Camera init failed with error 0x[code]
@@ -316,7 +350,7 @@ Camera init failed with error 0x[code]
 - Check power supply (adequate current)
 - Try different camera configurations
 
-#### **WiFi Connection Problems**
+#### WiFi Connection Problems
 ```cpp
 // Check WiFi credentials and network
 Failed to connect to WiFi. Error code: [code]
@@ -326,17 +360,17 @@ Failed to connect to WiFi. Error code: [code]
 - Check 2.4GHz network availability
 - Ensure adequate signal strength
 
-#### **Memory Issues**
+#### Memory Issues
 ```cpp
 // Monitor heap usage
 Free Heap: [bytes] bytes
 ```
 **Solutions:**
-- Reduce image quality/resolution
+- Reduce image quality/resolution to stay under 4KB limit
 - Increase frame buffer count
 - Check for memory leaks
 
-### **Serial Debug Commands**
+### Serial Debug Commands
 Monitor the serial output for diagnostic information:
 ```
 CPU Freq: 240 MHz
@@ -345,30 +379,30 @@ WiFi got IP address: 192.168.1.132
 Camera initialized: Yes
 ```
 
-## 🚀 Advanced Usage
+## Advanced Usage
 
-### **Custom Camera Settings**
+### Custom Camera Settings
 Modify `camera_config.h` for specific requirements:
 ```cpp
-// High quality settings
+// High quality settings (may exceed 4KB limit)
 .frame_size = FRAMESIZE_SVGA,  // 800x600
 .jpeg_quality = 8,             // Higher quality
 
-// Low bandwidth settings  
+// Optimized for 4KB limit
 .frame_size = FRAMESIZE_QVGA,  // 320x240
 .jpeg_quality = 20,            // Lower quality, smaller files
 ```
 
-### **Adding Custom Tools**
+### Adding Custom Tools
 Extend the MCP server with additional tools:
 
 1. **Add tool definition** in `handle_tools_list()`
 2. **Implement tool handler** function
 3. **Register in** `handle_tools_call()`
 
-### **Integration Examples**
+### Integration Examples
 
-#### **Python Client**
+#### Python Client
 ```python
 import requests
 import base64
@@ -390,7 +424,7 @@ def capture_image(esp32_ip, use_flash=False):
     data = response.json()
     
     if "result" in data:
-        # Extract base64 image
+        # Extract base64 image (under 4KB)
         image_data = data["result"]["content"][1]["data"]
         image_bytes = base64.b64decode(image_data)
         
@@ -405,7 +439,7 @@ def capture_image(esp32_ip, use_flash=False):
 capture_image("192.168.1.132", use_flash=True)
 ```
 
-#### **Node.js Integration**
+#### Node.js Integration
 ```javascript
 const axios = require('axios');
 const fs = require('fs');
@@ -437,7 +471,7 @@ async function captureImage(esp32IP, useFlash = false) {
 captureImage('192.168.1.132', true);
 ```
 
-## 🤝 Contributing
+## Contributing
 
 1. **Fork the repository**
 2. **Create feature branch**: `git checkout -b feature/new-tool`
@@ -445,32 +479,32 @@ captureImage('192.168.1.132', true);
 4. **Push to branch**: `git push origin feature/new-tool`
 5. **Create Pull Request**
 
-### **Development Guidelines**
+### Development Guidelines
 - Follow existing code style and patterns
 - Add proper error handling for new features
 - Update documentation for new tools
 - Test thoroughly on actual hardware
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **ESP32 Community** for excellent camera libraries
 - **Model Context Protocol** specification authors
 - **PlatformIO** for the excellent development environment
 - **ArduinoJson** library for efficient JSON handling
 
-## 📞 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/ESP32-CAM-AI/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/ESP32-CAM-AI/discussions)
 - **Documentation**: This README and inline code comments
 
-## 📊 Performance Metrics
+## Performance Metrics
 
-### **Typical Performance**
+### Typical Performance
 
 - **Image Capture**: ~2-3 seconds for QVGA (320x240) JPEG
 - **Tool Response Time**: <500ms for LED/Flash control
@@ -478,37 +512,37 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Memory Usage**: ~200KB free heap during normal operation
 - **Network Latency**: <100ms for local network requests
 
-### **Resource Usage**
+### Resource Usage
 
 - **Flash Storage**: ~1.2MB for compiled firmware
 - **RAM Usage**: ~100KB for base functionality + camera buffers
 - **CPU Usage**: <5% during idle, ~30% during image capture
-- **Network Bandwidth**: ~50KB per image (QVGA quality 12)
+- **Network Bandwidth**: ~50KB per image (QVGA quality 12, under 4KB base64)
 
-### **Optimization Tips**
+### Optimization Tips
 
 - **Lower JPEG Quality**: Reduces file size and capture time
 - **Smaller Frame Size**: Improves performance and memory usage
 - **Reduce Frame Buffer Count**: Saves memory but may affect stability
 - **WiFi Power Management**: Balance between performance and power consumption
 
-## 🛡️ Security Considerations
+## Security Considerations
 
-### **Network Security**
+### Network Security
 
 - **Open HTTP Server**: No built-in authentication (add custom authentication if needed)
 - **Local Network Access**: Device accessible to all network clients
 - **Unencrypted Communication**: Consider HTTPS for sensitive deployments
 - **IP Address Exposure**: Device IP visible on network scans
 
-### **Physical Security**
+### Physical Security
 
 - **Camera Placement**: Position device appropriately for intended monitoring
 - **Access Control**: Secure physical access to device and programming pins
 - **Power Supply**: Ensure stable power to prevent data corruption
 - **SD Card**: If used, secure against unauthorized access
 
-### **Recommended Security Measures**
+### Recommended Security Measures
 
 1. **Network Segmentation**: Use dedicated IoT VLAN
 2. **Firewall Rules**: Restrict access to specific IP ranges
@@ -516,15 +550,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 4. **Access Logging**: Monitor connection attempts
 5. **Custom Authentication**: Add API key or token validation
 
-### **Privacy Considerations**
+### Privacy Considerations
 
-- **Image Data**: Captured images transmitted as base64 over HTTP
+- **Image Data**: Captured images transmitted as base64 over HTTP (under 4KB)
 - **Local Processing**: No cloud storage by default
 - **Data Retention**: Images not stored on device (unless explicitly saved)
 - **Network Monitoring**: Be aware of network traffic for image transfers
 
 ---
 
-Made with ❤️ for the ESP32 and AI communities
+Made with care for the ESP32 and AI communities
 
 *Transform your ESP32-CAM into a powerful, remotely controllable AI-enabled camera system!*

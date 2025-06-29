@@ -1,6 +1,6 @@
 # ESP32-CAM MCP Server - Quick Reference
 
-## 🚀 Quick Start Commands
+## Quick Start Commands
 
 ### Build and Upload
 ```bash
@@ -24,7 +24,16 @@ build_flags =
     -DFLASH_GPIO=4
 ```
 
-## 🔧 MCP Tools Summary
+### Camera Orientation
+
+**Important**: Position the ESP32-CAM with the **flash LED facing downward** for optimal image capture:
+
+- Provides proper subject lighting
+- Prevents flash reflection
+- Natural illumination direction
+- Expected perspective for most use cases
+
+## MCP Tools Summary
 
 | Tool | Parameters | Description |
 |------|------------|-------------|
@@ -34,7 +43,51 @@ build_flags =
 | `wifi_status` | None | Get network information |
 | `system_status` | None | Get system diagnostics |
 
-## 📡 API Examples
+## System Status Parameters
+
+The `system_status` tool returns comprehensive diagnostic information about the ESP32-CAM:
+
+### Hardware Information
+- **CPU Frequency**: Operating frequency in MHz (typically 240 MHz)
+- **Flash Size**: Total flash memory size in bytes (typically 4,194,304 bytes = 4MB)
+- **Flash Speed**: Flash memory clock speed in Hz (typically 40,000,000 Hz = 40MHz)
+- **Internal Temperature**: ESP32 chip temperature in Celsius (normal range: 40-75°C)
+
+### Memory Statistics
+- **Free Heap**: Currently available RAM in bytes
+- **Min Free Heap**: Minimum free heap recorded since boot (indicates memory pressure)
+- **Max Alloc Heap**: Maximum contiguous memory block that can be allocated
+- **Sketch Size**: Size of the compiled firmware in bytes
+- **Free Sketch Space**: Remaining flash space for firmware updates
+
+### System Status
+- **Uptime**: Time since last boot/restart in seconds
+- **SDK Version**: ESP-IDF framework version (e.g., v4.4.7-dirty)
+- **Reset Reason**: Code indicating why the system last restarted:
+  - `1`: Power-on reset (normal startup)
+  - `2`: External reset (reset button)
+  - `3`: Software reset (ESP.restart())
+  - `12`: Brownout reset (power supply issue)
+  - `14`: RTC watchdog reset
+
+### Camera Status
+- **Camera Initialized**: Shows "Yes" if camera is working, "No" with error code if failed
+  - Success: "Yes" (camera ready for use)
+  - Failure: "No (code = 0x[hex])" where hex codes indicate specific camera errors
+
+### Temperature Monitoring
+- **Normal Operation**: 40-60°C during typical use
+- **Heavy Load**: 60-75°C during intensive operations (camera capture, WiFi activity)
+- **Warning Zone**: Above 75°C (check ventilation and power supply)
+- **Critical**: Above 85°C (automatic thermal protection may activate)
+
+### Memory Health Indicators
+- **Free Heap > 100KB**: Healthy memory state
+- **Free Heap 50-100KB**: Moderate memory usage
+- **Free Heap < 50KB**: High memory pressure (may cause instability)
+- **Min Free Heap**: Should remain above 30KB for stable operation
+
+## API Examples
 
 ### PowerShell
 ```powershell
@@ -202,7 +255,7 @@ curl -X POST http://192.168.1.100/ \
   }'
 ```
 
-## 🐍 Python Integration Example
+## Python Integration Example
 
 ```python
 import requests
@@ -332,7 +385,14 @@ if __name__ == "__main__":
     cam.led_control("off")
 ```
 
-## 🔧 Common Troubleshooting
+## Common Troubleshooting
+
+### Camera Orientation Issues
+**Problem**: Poor image quality, unexpected lighting, or flash reflection
+**Solution**: Ensure ESP32-CAM is positioned with **flash LED facing downward**
+- Camera lens should face the subject
+- Small flash LED (next to lens) should point toward ground/subject
+- This provides natural lighting and prevents reflection issues
 
 ### Camera Issues
 ```bash
@@ -359,7 +419,7 @@ Free heap: [bytes] bytes
 Min free heap: [bytes] bytes
 ```
 
-## 📝 Configuration Examples
+## Configuration Examples
 
 ### High Quality Images
 ```cpp
@@ -385,7 +445,7 @@ build_flags =
     -DFLASH_GPIO=14    # Custom flash pin
 ```
 
-## 🎯 Integration Tips
+## Integration Tips
 
 ### MCP Client Configuration
 ```json
@@ -421,20 +481,372 @@ rest_command:
       }
 ```
 
-## 📊 Performance Optimization
+## Visual Studio Code Integration
 
-### Reduce Image Size
-- Lower JPEG quality (higher number = lower quality)
-- Use smaller frame size (QVGA vs SVGA)
-- Optimize network conditions
+### MCP Configuration for VS Code
 
-### Improve Reliability
-- Use stable 5V power supply
-- Ensure strong WiFi signal
-- Enable watchdog timer
-- Implement retry logic in clients
+1. **Install MCP Extension**
+   - Install the Model Context Protocol extension from the VS Code marketplace
+   - Or use VS Code with built-in MCP support
 
-### Memory Management
-- Use single frame buffer for low memory
-- Avoid rapid consecutive captures
-- Monitor heap usage via system_status tool
+2. **Configure MCP Server**
+   Create or update your MCP configuration file:
+
+**Windows**: `%APPDATA%\Code\User\mcp_servers.json`
+**macOS**: `~/Library/Application Support/Code/User/mcp_servers.json`
+**Linux**: `~/.config/Code/User/mcp_servers.json`
+
+```json
+{
+  "mcpServers": {
+    "esp32-cam": {
+      "command": "node",
+      "args": ["-e", "require('http').createServer((req,res)=>{let body='';req.on('data',d=>body+=d);req.on('end',()=>{fetch('http://192.168.1.100/',{method:'POST',headers:{'Content-Type':'application/json'},body}).then(r=>r.text()).then(t=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(t)}).catch(e=>{res.writeHead(500);res.end(JSON.stringify({error:e.message}))})})}).listen(3001)"],
+      "env": {
+        "ESP32_CAM_IP": "192.168.1.100"
+      }
+    }
+  }
+}
+```
+
+**Alternative: Direct HTTP MCP Server**
+   For simpler setup, configure direct HTTP access:
+
+```json
+{
+  "mcpServers": {
+    "esp32-cam": {
+      "type": "http",
+      "url": "http://192.168.1.100",
+      "timeout": 30000,
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  }
+}
+```
+
+### Using ESP32-CAM in VS Code
+
+1. **Open Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+
+2. **Access MCP Tools**
+   - Type "MCP" to see available MCP commands
+   - Select "MCP: Call Tool" to access ESP32-CAM functions
+
+3. **Available MCP Tools in VS Code:**
+   - **LED Control**: Turn camera LED on/off
+   - **Flash Control**: Trigger camera flash with custom duration
+   - **Image Capture**: Take photos with optional flash
+   - **WiFi Status**: Check network connectivity
+   - **System Status**: Monitor ESP32-CAM health
+
+### VS Code Workspace Configuration
+
+Create `.vscode/settings.json` in your project:
+
+```json
+{
+  "mcp.servers": {
+    "esp32-cam": {
+      "type": "http",
+      "url": "http://192.168.1.100",
+      "displayName": "ESP32-CAM Controller",
+      "description": "Remote camera control and image capture"
+    }
+  },
+  "mcp.autoConnect": true,
+  "mcp.timeout": 30000
+}
+```
+
+### VS Code Tasks for ESP32-CAM
+
+Create `.vscode/tasks.json` for common operations:
+
+```json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ESP32-CAM: Take Photo",
+      "type": "shell",
+      "command": "curl",
+      "args": [
+        "-X", "POST",
+        "http://192.168.1.100/",
+        "-H", "Content-Type: application/json",
+        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"capture\",\"arguments\":{\"flash\":\"on\"}}}"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ESP32-CAM: LED On",
+      "type": "shell",
+      "command": "curl",
+      "args": [
+        "-X", "POST",
+        "http://192.168.1.100/",
+        "-H", "Content-Type: application/json",
+        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"led\",\"arguments\":{\"state\":\"on\"}}}"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "ESP32-CAM: LED Off",
+      "type": "shell",
+      "command": "curl",
+      "args": [
+        "-X", "POST",
+        "http://192.168.1.100/",
+        "-H", "Content-Type: application/json",
+        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"led\",\"arguments\":{\"state\":\"off\"}}}"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "ESP32-CAM: Status Check",
+      "type": "shell",
+      "command": "curl",
+      "args": [
+        "-X", "POST", 
+        "http://192.168.1.100/",
+        "-H", "Content-Type: application/json",
+        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"system_status\",\"arguments\":{}}}"
+      ],
+      "group": "test"
+    }
+  ]
+}
+```
+
+### VS Code Snippets
+
+Create `.vscode/esp32cam.code-snippets`:
+
+```json
+{
+  "ESP32-CAM MCP Call": {
+    "prefix": "esp32-mcp",
+    "body": [
+      "{",
+      "  \"jsonrpc\": \"2024-11-05\",",
+      "  \"id\": ${1:1},",
+      "  \"method\": \"tools/call\",",
+      "  \"params\": {",
+      "    \"name\": \"${2|led,flash,capture,wifi_status,system_status|}\",",
+      "    \"arguments\": {",
+      "      $3",
+      "    }",
+      "  }",
+      "}"
+    ],
+    "description": "ESP32-CAM MCP tool call template"
+  },
+  "ESP32-CAM LED Control": {
+    "prefix": "esp32-led",
+    "body": [
+      "{",
+      "  \"jsonrpc\": \"2024-11-05\",",
+      "  \"id\": ${1:1},",
+      "  \"method\": \"tools/call\",",
+      "  \"params\": {",
+      "    \"name\": \"led\",",
+      "    \"arguments\": {",
+      "      \"state\": \"${2|on,off|}\"",
+      "    }",
+      "  }",
+      "}"
+    ],
+    "description": "ESP32-CAM LED control"
+  },
+  "ESP32-CAM Capture": {
+    "prefix": "esp32-capture",
+    "body": [
+      "{",
+      "  \"jsonrpc\": \"2024-11-05\",",
+      "  \"id\": ${1:1},",
+      "  \"method\": \"tools/call\",",
+      "  \"params\": {",
+      "    \"name\": \"capture\",",
+      "    \"arguments\": {",
+      "      \"flash\": \"${2|on,off|}\"",
+      "    }",
+      "  }",
+      "}"
+    ],
+    "description": "ESP32-CAM image capture"
+  }
+}
+```
+
+### Using with VS Code Extensions
+
+#### REST Client Extension
+
+Create `test-esp32cam.http`:
+
+```http
+### Initialize MCP Connection
+POST http://192.168.1.100/
+Content-Type: application/json
+
+{
+  "jsonrpc": "2024-11-05",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "VS Code REST Client",
+      "version": "1.0.0"
+    }
+  }
+}
+
+### List Available Tools
+POST http://192.168.1.100/
+Content-Type: application/json
+
+{
+  "jsonrpc": "2024-11-05",
+  "id": 2,
+  "method": "tools/list"
+}
+
+### Turn LED On
+POST http://192.168.1.100/
+Content-Type: application/json
+
+{
+  "jsonrpc": "2024-11-05",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "led",
+    "arguments": {
+      "state": "on"
+    }
+  }
+}
+
+### Capture Image with Flash
+POST http://192.168.1.100/
+Content-Type: application/json
+
+{
+  "jsonrpc": "2024-11-05",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "capture",
+    "arguments": {
+      "flash": "on"
+    }
+  }
+}
+
+### Get System Status
+POST http://192.168.1.100/
+Content-Type: application/json
+
+{
+  "jsonrpc": "2024-11-05",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "system_status",
+    "arguments": {}
+  }
+}
+```
+
+### Debugging in VS Code
+
+1. **Enable Serial Monitor**
+   - Install PlatformIO extension
+   - Use `Ctrl+Shift+P` → "PlatformIO: Serial Monitor"
+   - Monitor ESP32-CAM debug output
+
+2. **Network Debugging**
+   - Use Developer Tools (`F12`) in VS Code
+   - Monitor MCP requests/responses
+   - Check network connectivity to ESP32-CAM
+
+3. **Common Issues**
+   - **Connection refused**: Check ESP32-CAM IP address
+   - **Timeout errors**: Increase MCP timeout settings
+   - **Invalid JSON**: Validate request format
+   - **Camera errors**: Check serial output for hardware issues
+
+### VS Code Keybindings
+
+Add to `keybindings.json`:
+
+```json
+[
+  {
+    "key": "ctrl+alt+c",
+    "command": "workbench.action.tasks.runTask",
+    "args": "ESP32-CAM: Take Photo"
+  },
+  {
+    "key": "ctrl+alt+l",
+    "command": "workbench.action.tasks.runTask", 
+    "args": "ESP32-CAM: LED On"
+  },
+  {
+    "key": "ctrl+alt+shift+l",
+    "command": "workbench.action.tasks.runTask",
+    "args": "ESP32-CAM: LED Off"
+  }
+]
+```
+
+**Note**: Images captured are automatically optimized to stay below 4KB base64 encoding for compatibility with AI clients and VS Code MCP integrations.
+
+### Browser Integration Support
+
+The ESP32-CAM MCP server includes **CORS (Cross-Origin Resource Sharing)** headers, enabling direct access from web browsers and browser-based applications:
+
+- **Access-Control-Allow-Origin**: `*` (allows all origins)
+- **Access-Control-Allow-Methods**: `POST, OPTIONS`
+- **Access-Control-Allow-Headers**: `Content-Type, Authorization`
+- **Preflight Requests**: Automatic OPTIONS method handling
+
+This enables direct HTTP requests from JavaScript running in web browsers, making the ESP32-CAM accessible from web applications without proxy servers.
+
+### Testing CORS Support
+
+#### PowerShell CORS Test
+```powershell
+# Run the CORS test script
+.\test_cors.ps1
+
+# Expected output should show:
+# - OPTIONS request success (HTTP 200)
+# - CORS headers present in response
+# - POST request success with MCP response
+# - Browser compatibility confirmed
+```
+
+#### Manual CORS Test
+```powershell
+# Test OPTIONS preflight request
+$headers = @{
+    'Origin' = 'http://localhost:3000'
+    'Access-Control-Request-Method' = 'POST'
+    'Access-Control-Request-Headers' = 'Content-Type'
+}
+Invoke-WebRequest -Uri "http://esp32-7c9ebdf16a10.local" -Method Options -Headers $headers
+```

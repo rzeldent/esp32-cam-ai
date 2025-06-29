@@ -39,7 +39,17 @@ unsigned long lastReconnectAttempt = 0;
 int reconnectAttempts = 0;
 bool wifiConnected = false;
 
+// Result of camera initialization
 esp_err_t camera_init_result = ESP_OK;
+// Temperature export (funny; has a typo!)
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+  uint8_t temprature_sens_read();
+#ifdef __cplusplus
+}
+#endif
 
 WebServer server(80);
 
@@ -260,7 +270,12 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     delay(20); // Allow flash to stabilize
   }
 
+  // Discard previous frames to ensure we get a fresh capture
   auto fb = esp_camera_fb_get();
+  esp_camera_fb_return(fb);
+
+  fb = esp_camera_fb_get();
+  esp_camera_fb_return(fb);
 
   digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
 
@@ -310,6 +325,8 @@ void tool_system_status(mcp_response &response)
   auto result_content_item = result_content.add<JsonObject>();
   result_content_item["type"] = "text";
 
+  // Get the tem
+
   String status_text = "System Status:\n";
   status_text += "Uptime: " + String(millis() / 1000) + " seconds\n";
   status_text += "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n";
@@ -322,7 +339,9 @@ void tool_system_status(mcp_response &response)
   status_text += "Free Sketch Space: " + String(ESP.getFreeSketchSpace()) + " bytes\n";
   status_text += "SDK Version: " + String(ESP.getSdkVersion()) + "\n";
   status_text += "Reset Reason: " + String(esp_reset_reason()) + "\n";
-  status_text += "Camera initialized: " + String(camera_init_result == ESP_OK ? "Yes" : "No") + "\n";
+  status_text += "Camera initialized: " + String(camera_init_result == ESP_OK ? "Yes" : "No (code = 0x" + String(camera_init_result, 16) + ")") + "\n";
+  auto internal_temperature = (temprature_sens_read() - 32) / 1.8;
+  status_text += "Internal Temperature: " + String(internal_temperature, 2) + " °C\n";
   result_content_item["text"] = status_text;
 }
 
@@ -361,6 +380,19 @@ void handle_tools_call(const mcp_request &request, mcp_response &response)
 
 void handleRoot()
 {
+  // Add CORS headers for all requests
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  server.sendHeader("Access-Control-Max-Age", "86400");
+
+  if (server.method() == HTTP_OPTIONS)
+  {
+    // Handle preflight CORS requests
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
   if (server.method() != HTTP_POST)
   {
     server.send(405, "text/plain", "Only POST allowed");
@@ -473,12 +505,12 @@ void setup()
 
   // Allow over the air updates
   ArduinoOTA.begin();
-
+  // Initialize camera
   camera_init_result = esp_camera_init(&esp32cam_aithinker_settings);
   if (camera_init_result != ESP_OK)
     log_e("Camera init failed with error 0x%x", camera_init_result);
 
-  server.on("/", handleRoot);
+  server.on("/", HTTP_ANY, handleRoot);
   server.begin();
 }
 

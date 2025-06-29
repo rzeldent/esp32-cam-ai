@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32-CAM Browser Controller</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .controls { margin: 20px 0; }
+        button { margin: 5px; padding: 10px 20px; font-size: 16px; }
+        .status { margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 5px; }
+        .image-container { margin: 20px 0; text-align: center; }
+        .image-container img { max-width: 100%; border: 1px solid #ccc; }
+        .error { color: red; }
+        .success { color: green; }
+        .response { font-family: monospace; background: #f8f8f8; padding: 10px; margin: 10px 0; border-radius: 5px; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32-CAM Browser Controller</h1>
+        <p>This page demonstrates direct browser access to the ESP32-CAM MCP server using CORS headers.</p>
+        
+        <div class="controls">
+            <label for="esp32-url">ESP32-CAM URL:</label>
+            <input type="text" id="esp32-url" value="http://esp32-7c9ebdf16a10.local" style="width: 300px;">
+        </div>
+
+        <div class="controls">
+            <button onclick="initialize()">Initialize MCP</button>
+            <button onclick="listTools()">List Tools</button>
+            <button onclick="getStatus()">System Status</button>
+            <button onclick="getWiFiStatus()">WiFi Status</button>
+        </div>
+
+        <div class="controls">
+            <button onclick="ledOn()">LED On</button>
+            <button onclick="ledOff()">LED Off</button>
+            <button onclick="flashCamera()">Flash Camera</button>
+            <button onclick="captureImage()">Capture Image</button>
+        </div>
+
+        <div id="status" class="status">Ready to connect...</div>
+        
+        <div id="response" class="response" style="display: none;"></div>
+        
+        <div id="image-container" class="image-container" style="display: none;">
+            <h3>Captured Image:</h3>
+            <img id="captured-image" alt="Captured from ESP32-CAM">
+        </div>
+    </div>
+
+    <script>
+        let requestId = 1;
+
+        function getESP32URL() {
+            return document.getElementById('esp32-url').value;
+        }
+
+        function updateStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = isError ? 'status error' : 'status success';
+        }
+
+        function showResponse(response) {
+            const responseDiv = document.getElementById('response');
+            responseDiv.textContent = JSON.stringify(response, null, 2);
+            responseDiv.style.display = 'block';
+        }
+
+        async function sendMCPRequest(method, params = null) {
+            const payload = {
+                jsonrpc: "2024-11-05",
+                id: requestId++,
+                method: method
+            };
+            
+            if (params) {
+                payload.params = params;
+            }
+
+            try {
+                updateStatus(`Sending ${method} request...`);
+                
+                const response = await fetch(getESP32URL(), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                showResponse(data);
+                
+                if (data.error) {
+                    updateStatus(`Error: ${data.error.message}`, true);
+                    return null;
+                } else {
+                    updateStatus(`${method} completed successfully`);
+                    return data.result;
+                }
+            } catch (error) {
+                updateStatus(`Request failed: ${error.message}`, true);
+                console.error('Request error:', error);
+                return null;
+            }
+        }
+
+        async function initialize() {
+            const result = await sendMCPRequest('initialize', {
+                protocolVersion: "2024-11-05",
+                capabilities: {},
+                clientInfo: {
+                    name: "Browser MCP Client",
+                    version: "1.0.0"
+                }
+            });
+            
+            if (result) {
+                updateStatus(`Connected to ${result.serverInfo?.name || 'ESP32-CAM'}`);
+            }
+        }
+
+        async function listTools() {
+            const result = await sendMCPRequest('tools/list');
+            if (result) {
+                updateStatus(`Found ${result.tools?.length || 0} available tools`);
+            }
+        }
+
+        async function ledOn() {
+            await sendMCPRequest('tools/call', {
+                name: 'led',
+                arguments: { state: 'on' }
+            });
+        }
+
+        async function ledOff() {
+            await sendMCPRequest('tools/call', {
+                name: 'led',
+                arguments: { state: 'off' }
+            });
+        }
+
+        async function flashCamera() {
+            await sendMCPRequest('tools/call', {
+                name: 'flash',
+                arguments: { duration: 100 }
+            });
+        }
+
+        async function getStatus() {
+            await sendMCPRequest('tools/call', {
+                name: 'system_status',
+                arguments: {}
+            });
+        }
+
+        async function getWiFiStatus() {
+            await sendMCPRequest('tools/call', {
+                name: 'wifi_status',
+                arguments: {}
+            });
+        }
+
+        async function captureImage() {
+            const result = await sendMCPRequest('tools/call', {
+                name: 'capture',
+                arguments: { flash: 'on' }
+            });
+
+            if (result && result.content && result.content.length > 1) {
+                const imageContent = result.content[1];
+                if (imageContent.type === 'image') {
+                    const imageData = imageContent.data;
+                    const img = document.getElementById('captured-image');
+                    img.src = `data:image/jpeg;base64,${imageData}`;
+                    document.getElementById('image-container').style.display = 'block';
+                    updateStatus(`Image captured (${imageData.length} bytes base64)`);
+                }
+            }
+        }
+
+        // Test CORS support on page load
+        window.addEventListener('load', function() {
+            updateStatus('Page loaded. CORS headers enable direct browser access to ESP32-CAM.');
+        });
+    </script>
+</body>
+</html>

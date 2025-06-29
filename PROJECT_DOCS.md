@@ -1,6 +1,6 @@
 # ESP32-CAM MCP Server - Project Documentation
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ESP32-CAM-AI/
@@ -20,18 +20,20 @@ ESP32-CAM-AI/
 └── PROJECT_DOCS.md             # This file
 ```
 
-## 🎯 Project Overview
+## Project Overview
 
 The ESP32-CAM MCP Server is a comprehensive IoT solution that transforms an ESP32-CAM module into a remotely controllable camera system using the Model Context Protocol (MCP). This project demonstrates advanced embedded systems programming, network protocols, and IoT integration.
+
+**Important**: All images are automatically optimized to stay below 4KB base64 encoding to comply with AI client data limitations.
 
 ### Key Technologies
 - **Hardware**: ESP32-CAM with OV2640 camera sensor
 - **Framework**: Arduino/ESP-IDF via PlatformIO
 - **Protocol**: Model Context Protocol (MCP) 2024-11-05
 - **Networking**: WiFi with HTTP server
-- **Data Format**: JSON-RPC 2.0 with base64 image encoding
+- **Data Format**: JSON-RPC 2.0 with base64 image encoding (under 4KB)
 
-## 🏗️ Architecture Deep Dive
+## Architecture Deep Dive
 
 ### 1. Hardware Layer
 ```cpp
@@ -63,7 +65,7 @@ void handle_led_tool(const JsonObject& arguments, JsonDocument& response);
 void handle_capture_tool(const JsonObject& arguments, JsonDocument& response);
 ```
 
-## 🔧 Implementation Details
+## Implementation Details
 
 ### MCP Protocol Implementation
 
@@ -102,6 +104,16 @@ void handle_[tool]_tool(const JsonObject& arguments, JsonDocument& response) {
 5. Encode as base64
 6. Clean up resources
 
+#### Camera Orientation Best Practices
+**Critical Setup**: Position the ESP32-CAM with the **flash LED facing downward** for optimal results:
+
+- **Proper Lighting**: Flash LED illuminates subjects from above, providing natural lighting direction
+- **Reflection Prevention**: Downward orientation prevents flash reflection off surfaces
+- **Image Quality**: Ensures consistent, well-lit photographs without harsh shadows
+- **Use Case Alignment**: Matches expected perspective for security cameras, monitoring, and photography applications
+
+The camera lens should face the target while the small flash LED (adjacent to the lens) points toward the ground or subject surface.
+
 ### Network Reliability
 
 #### WiFi Management
@@ -115,8 +127,13 @@ void handle_[tool]_tool(const JsonObject& arguments, JsonDocument& response) {
 - JSON request/response handling
 - Proper HTTP status codes
 - Error response formatting
+- **CORS Support**: Cross-Origin Resource Sharing headers for browser compatibility
+  - `Access-Control-Allow-Origin: *`
+  - `Access-Control-Allow-Methods: POST, OPTIONS`
+  - `Access-Control-Allow-Headers: Content-Type, Authorization`
+  - Automatic OPTIONS preflight request handling
 
-## 🛠️ Development Workflow
+## Development Workflow
 
 ### Build Process
 1. **Environment Setup**: PlatformIO with ESP32 platform
@@ -138,7 +155,73 @@ void handle_[tool]_tool(const JsonObject& arguments, JsonDocument& response) {
 Serial.println("Camera initialized: " + String(camera_initialized ? "Yes" : "No"));
 ```
 
-## 📊 Performance Analysis
+## System Status Tool Documentation
+
+### Complete Parameter Reference
+
+The `system_status` tool provides comprehensive diagnostic data for monitoring ESP32-CAM health and performance:
+
+#### Hardware Metrics
+- **`CPU Frequency`**: Current processor speed (240 MHz typical)
+- **`Flash Size`**: Total flash memory (4,194,304 bytes = 4MB typical)
+- **`Flash Speed`**: Flash memory interface speed (40,000,000 Hz = 40MHz typical)
+- **`Internal Temperature`**: ESP32 die temperature in Celsius (calculated from internal sensor)
+
+#### Memory Management
+- **`Free Heap`**: Currently available dynamic memory in bytes
+- **`Min Free Heap`**: Lowest free heap recorded since boot (memory pressure indicator)
+- **`Max Alloc Heap`**: Largest contiguous memory block available for allocation
+- **`Sketch Size`**: Size of compiled firmware in flash memory
+- **`Free Sketch Space`**: Remaining flash space available for OTA updates
+
+#### System Information
+- **`Uptime`**: Milliseconds since boot converted to seconds
+- **`SDK Version`**: ESP-IDF framework version string
+- **`Reset Reason`**: Numeric code indicating last restart cause:
+  - `1` = POWERON_RESET (normal power-on)
+  - `2` = EXT_RESET (external reset pin)
+  - `3` = SW_RESET (software-initiated restart)
+  - `12` = BROWNOUT_RESET (power supply voltage drop)
+  - `14` = RTCWDT_RESET (RTC watchdog timeout)
+
+#### Camera Status
+- **`Camera initialized`**: Boolean status with error details
+  - Success: `"Yes"` (camera driver loaded and functional)
+  - Failure: `"No (code = 0x[hex])"` with specific ESP camera error code
+
+#### Temperature Analysis
+```cpp
+auto internal_temperature = (temprature_sens_read() - 32) / 1.8;
+```
+- **Normal Operation**: 40-60°C during typical WiFi and camera operations
+- **Heavy Load**: 60-75°C during intensive processing (continuous capture, high WiFi traffic)
+- **Warning Zone**: 75-85°C (check ventilation, power supply quality)
+- **Critical**: >85°C (thermal protection may activate, performance degradation)
+
+#### Memory Health Assessment
+- **Healthy State**: Free Heap > 100KB (sufficient for all operations)
+- **Moderate Usage**: 50-100KB free (normal operation, monitor trends)
+- **High Pressure**: 20-50KB free (limit concurrent operations)
+- **Critical State**: <20KB free (risk of crashes, restart recommended)
+
+### Diagnostic Use Cases
+
+#### Performance Monitoring
+- Track memory leaks via `Min Free Heap` trends over time
+- Monitor temperature during extended operation
+- Verify stable camera initialization after power cycles
+
+#### Troubleshooting
+- Check reset reason to identify power or software issues
+- Analyze memory pressure during camera capture operations
+- Verify system stability through uptime tracking
+
+#### Capacity Planning
+- Determine optimal capture frequency based on memory usage
+- Plan OTA update timing based on available sketch space
+- Monitor thermal performance for enclosure design
+
+## Performance Analysis
 
 ### Memory Usage Breakdown
 - **Program Flash**: ~1.2MB (code + libraries)
@@ -155,11 +238,11 @@ Serial.println("Camera initialized: " + String(camera_initialized ? "Yes" : "No"
 
 ### Network Performance
 - **Request Processing**: <100ms typical
-- **Image Transfer**: ~2-5 seconds (depends on size/quality)
+- **Image Transfer**: ~2-5 seconds (depends on size/quality, optimized for 4KB)
 - **Reconnection Time**: ~10-15 seconds
 - **Packet Loss**: Handled by TCP retransmission
 
-## 🔒 Security Analysis
+## Security Analysis
 
 ### Current Security Model
 - **Authentication**: None (open HTTP server)
@@ -189,11 +272,11 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 }
 ```
 
-## 🚀 Future Enhancements
+## Future Enhancements
 
 ### Planned Features
 1. **Motion Detection**: PIR sensor integration
-2. **Cloud Storage**: AWS S3/Azure Blob integration
+2. **Cloud Storage**: AWS S3/Azure Blob integration (with 4KB image optimization)
 3. **Time-lapse**: Scheduled capture functionality
 4. **Multi-camera**: Support for multiple ESP32-CAM units
 5. **Image Processing**: On-device filtering and effects
@@ -211,7 +294,7 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 3. **Caching**: Repeated request optimization
 4. **Power Management**: Sleep modes for battery operation
 
-## 🧪 Testing Documentation
+## Testing Documentation
 
 ### Hardware Testing Checklist
 - [ ] Camera initialization successful
@@ -236,13 +319,13 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 4. **Error Conditions**: Invalid requests and hardware failures
 5. **Long Running**: Extended operation stability
 
-## 📈 Monitoring and Diagnostics
+## Monitoring and Diagnostics
 
 ### Key Metrics
 - **Uptime**: System operational time
 - **Memory Usage**: Heap utilization trends
 - **Network Statistics**: Requests, errors, response times
-- **Camera Performance**: Capture success rate, quality metrics
+- **Camera Performance**: Capture success rate, quality metrics, 4KB compliance
 
 ### Diagnostic Tools
 1. **Serial Monitor**: Real-time logging output
@@ -256,7 +339,7 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 - Camera initialization failure
 - System restart/watchdog timeout
 
-## 🤝 Contribution Guidelines
+## Contribution Guidelines
 
 ### Code Standards
 - Follow Arduino coding style
@@ -278,14 +361,14 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 - Include configuration examples
 - Provide troubleshooting steps
 
-## 📝 Release Notes
+## Release Notes
 
 ### Version 1.0.0 (Current)
 - Complete MCP protocol implementation
 - Five core tools (LED, flash, capture, WiFi status, system status)
 - Robust WiFi management with auto-reconnection
 - Comprehensive error handling and reporting
-- Base64 image encoding and transfer
+- Base64 image encoding and transfer (optimized for 4KB limit)
 - Watchdog timer and system stability features
 
 ### Planned Version 1.1.0
@@ -295,7 +378,7 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 - Performance optimizations
 - Extended configuration options
 
-## 🔍 Troubleshooting Guide
+## Troubleshooting Guide
 
 ### Common Issues and Solutions
 
@@ -327,7 +410,7 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 - Check network connectivity
 - Monitor system performance
 
-## 📚 Additional Resources
+## Additional Resources
 
 ### Documentation
 - [ESP32-CAM Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-cam_datasheet_en.pdf)
