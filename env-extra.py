@@ -10,5 +10,5 @@ with open(env_file, "r") as f:
         key_value = line.strip().split("=", 1)
         if len(key_value) == 2:
             key, value = key_value
-            flags.append(f'-D\'{key}="{value}"\'')
+            flags.append(f'-D {key}="{value}"')
     env.Append(BUILD_FLAGS=flags)
