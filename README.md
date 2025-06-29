@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server implementation for ESP32-CAM that enables remote camera control, LED management, and system monitoring through standardized MCP tools.
 
+[![Platform IO CI](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml/badge.svg)](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml)
+
 ## Overview
 
 This project transforms an ESP32-CAM into a remotely controllable MCP server that can capture images, control LEDs, manage flash lighting, and provide system diagnostics. The server exposes these capabilities through the Model Context Protocol, making it easy to integrate with AI assistants and automation systems.
@@ -77,8 +79,8 @@ The camera lens should face the subject while the small flash LED (usually next 
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/yourusername/ESP32-CAM-AI.git
-cd ESP32-CAM-AI
+git clone https://github.com/yourusername/esp32-cam-ai.git
+cd esp32-cam-ai
 ```
 
 ### 2. Configure WiFi Credentials
@@ -86,8 +88,8 @@ cd ESP32-CAM-AI
 Create a `.env` file in the project root directory with your WiFi credentials:
 
 ```properties
-WIFI_SSID="YourWiFiNetwork"
-WIFI_PASSWORD="YourPassword"
+WIFI_SSID=YourWiFiNetwork
+WIFI_PASSWORD=YourPassword
 ```
 
 **Important**: The `.env` file is required for the project to build successfully. The build system automatically reads these credentials and passes them to the firmware during compilation.
@@ -132,8 +134,10 @@ constexpr camera_config_t esp32cam_aithinker_settings = {
 Configure LED and Flash pins in your build flags:
 ```ini
 build_flags = 
-    -DLED_GPIO=33      # Built-in LED pin
-    -DFLASH_GPIO=4     # Flash LED pin
+    -DLED_GPIO=33         # Built-in LED pin
+    -DLED_ON_LEVEL=LOW    # GPIO level for On
+    -DFLASH_GPIO=4        # Flash LED pin
+    -DFLASH_ON_LEVEL=HIGH # GPIO level for On
 ```
 
 ## MCP Tools Reference
@@ -282,31 +286,32 @@ The MCP server can be integrated with AI assistants that support the Model Conte
 
 ### Core Components
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   MCP Protocol  │────│  Tool Handlers  │────│ Hardware Layer  │
-│                 │    │                 │    │                 │
-│ • Initialization│    │ • LED Control   │    │ • Camera (OV2640)│
-│ • Tools List    │    │ • Flash Control │    │ • GPIO Control  │
-│ • Tools Call    │    │ • Capture       │    │ • WiFi Module   │
-│ • Notifications │    │ • Status Check  │    │ • Flash Storage │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-          │                       │                       │
-          └───────────────────────┼───────────────────────┘
-                                  │
-                    ┌─────────────────┐
-                    │  Web Server     │
-                    │                 │
-                    │ • HTTP Endpoint │
-                    │ • JSON Parsing  │
-                    │ • Error Handling│
-                    │ • Response Gen. │
-                    └─────────────────┘
+
+```plaintext
+┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
+│    MCP Protocol   │────│   Tool Handlers   │────│   Hardware Layer  │
+│                   │    │                   │    │                   │
+│ • Initialization  │    │ • LED Control     │    │ • Camera (OV2640) │
+│ • Tools List      │    │ • Flash Control   │    │ • GPIO Control    │
+│ • Tools Call      │    │ • Capture         │    │ • WiFi Module     │
+│ • Notifications   │    │ • Status Check    │    │ • Flash Storage   │
+└───────────────────┘    └───────────────────┘    └───────────────────┘
+  │                          │                      │
+  └──────────────────────────┼──────────────────────┘
+              │
+          ┌───────────────────┐
+          │    Web Server     │
+          │                   │
+          │ • HTTP Endpoint   │
+          │ • JSON Parsing    │
+          │ • Error Handling  │
+          │ • Response Gen.   │
+          └───────────────────┘
 ```
 
 ### Code Structure
 ```
-ESP32-CAM-AI/
+esp32-cam-ai/
 ├── src/
 │   └── main.cpp              # Main application code
 ├── include/
@@ -375,8 +380,8 @@ WIFI_PASSWORD is not defined. Please define it in your environment variables or 
 - Create a `.env` file in the project root directory
 - Add WiFi credentials to `.env` file in the correct format:
   ```properties
-  WIFI_SSID="YourNetworkName"
-  WIFI_PASSWORD="YourPassword"
+  WIFI_SSID=YourNetworkName
+  WIFI_PASSWORD=YourPassword
   ```
 - Ensure no spaces around the `=` sign
 - Use quotes around values containing special characters or spaces
@@ -411,7 +416,7 @@ Modify `camera_config.h` for specific requirements:
 
 // Optimized for 4KB limit
 .frame_size = FRAMESIZE_QVGA,  // 320x240
-.jpeg_quality = 20,            // Lower quality, smaller files
+.jpeg_quality = 25,            // Lower quality, smaller files
 ```
 
 ### Adding Custom Tools
@@ -519,8 +524,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/ESP32-CAM-AI/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/ESP32-CAM-AI/discussions)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/esp32-cam-ai/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/esp32-cam-ai/discussions)
 - **Documentation**: This README and inline code comments
 
 ## Performance Metrics
