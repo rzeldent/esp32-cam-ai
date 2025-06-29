@@ -55,6 +55,14 @@ void handle_initialize(mcp_response &response)
   server_info["version"] = "1.0.0";
 }
 
+void handle_notifications_initialized(mcp_response &response)
+{
+  // For notifications, we don't need to send a response body
+  // Set empty result to indicate successful notification processing
+  auto result = response.create_result();
+  result["acknowledged"] = true;
+}
+
 void handle_tools_list(mcp_response &response)
 {
   auto result = response.create_result();
@@ -224,7 +232,7 @@ void tool_led(JsonObject arguments, mcp_response &response)
 
 void tool_flash(JsonObject arguments, mcp_response &response)
 {
-  auto duration = arguments["duration"].as<int>();
+  auto duration = arguments["duration"].is<int>() ? arguments["duration"].as<int>() : 50; // Default to 50ms if not provided
   digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
   delay(duration); // 5-100ms
   digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
@@ -275,7 +283,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
 
   auto result_content_image_item = result_content.add<JsonObject>();
   result_content_image_item["type"] = "image";
-  result_content_image_item["data"] = "data:image/jpeg;base64," + base64_image;
+  result_content_image_item["data"] = base64_image;
   result_content_image_item["mimeType"] = "image/jpeg";
 }
 
@@ -368,6 +376,8 @@ void handleRoot()
     // Handle MCP methods
     if (mcp_request.method() == "initialize")
       handle_initialize(mcp_response);
+    else if (mcp_request.method() == "notifications/initialized")
+      handle_notifications_initialized(mcp_response);
     else if (mcp_request.method() == "tools/list")
       handle_tools_list(mcp_response);
     else if (mcp_request.method() == "tools/call")
