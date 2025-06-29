@@ -90,6 +90,8 @@ WIFI_SSID="YourWiFiNetwork"
 WIFI_PASSWORD="YourPassword"
 ```
 
+**Tip**: You can copy `.env.template` to `.env` and modify the values.
+
 **Important**: The `.env` file is required for the project to build successfully. The build system automatically reads these credentials and passes them to the firmware during compilation.
 
 **Note**: For security reasons, the `.env` file should not be committed to version control. Make sure it's included in your `.gitignore` file.
