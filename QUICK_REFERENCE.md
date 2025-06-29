@@ -3,6 +3,7 @@
 ## Quick Start Commands
 
 ### Build and Upload
+
 ```bash
 # Build the project
 pio run
@@ -17,6 +18,7 @@ pio device monitor
 ### Basic Configuration
 
 Create a `.env` file in the project root:
+
 ```properties
 # .env file
 WIFI_SSID="YourWiFiNetwork"
@@ -49,12 +51,14 @@ WIFI_PASSWORD="YourPassword"
 The `system_status` tool returns comprehensive diagnostic information about the ESP32-CAM:
 
 ### Hardware Information
+
 - **CPU Frequency**: Operating frequency in MHz (typically 240 MHz)
 - **Flash Size**: Total flash memory size in bytes (typically 4,194,304 bytes = 4MB)
 - **Flash Speed**: Flash memory clock speed in Hz (typically 40,000,000 Hz = 40MHz)
 - **Internal Temperature**: ESP32 chip temperature in Celsius (normal range: 40-75°C)
 
 ### Memory Statistics
+
 - **Free Heap**: Currently available RAM in bytes
 - **Min Free Heap**: Minimum free heap recorded since boot (indicates memory pressure)
 - **Max Alloc Heap**: Maximum contiguous memory block that can be allocated
@@ -62,6 +66,7 @@ The `system_status` tool returns comprehensive diagnostic information about the 
 - **Free Sketch Space**: Remaining flash space for firmware updates
 
 ### System Status
+
 - **Uptime**: Time since last boot/restart in seconds
 - **SDK Version**: ESP-IDF framework version (e.g., v4.4.7-dirty)
 - **Reset Reason**: Code indicating why the system last restarted:
@@ -72,17 +77,20 @@ The `system_status` tool returns comprehensive diagnostic information about the 
   - `14`: RTC watchdog reset
 
 ### Camera Status
+
 - **Camera Initialized**: Shows "Yes" if camera is working, "No" with error code if failed
   - Success: "Yes" (camera ready for use)
   - Failure: "No (code = 0x[hex])" where hex codes indicate specific camera errors
 
 ### Temperature Monitoring
+
 - **Normal Operation**: 40-60°C during typical use
 - **Heavy Load**: 60-75°C during intensive operations (camera capture, WiFi activity)
 - **Warning Zone**: Above 75°C (check ventilation and power supply)
 - **Critical**: Above 85°C (automatic thermal protection may activate)
 
 ### Memory Health Indicators
+
 - **Free Heap > 100KB**: Healthy memory state
 - **Free Heap 50-100KB**: Moderate memory usage
 - **Free Heap < 50KB**: High memory pressure (may cause instability)
@@ -91,6 +99,7 @@ The `system_status` tool returns comprehensive diagnostic information about the 
 ## API Examples
 
 ### PowerShell
+
 ```powershell
 # Initialize MCP connection
 $init = @{
@@ -157,6 +166,7 @@ if ($response.result.content[1].type -eq "image") {
 ```
 
 ### cURL
+
 ```bash
 # Initialize
 curl -X POST http://192.168.1.100/ \
@@ -389,13 +399,16 @@ if __name__ == "__main__":
 ## Common Troubleshooting
 
 ### Camera Orientation Issues
+
 **Problem**: Poor image quality, unexpected lighting, or flash reflection
 **Solution**: Ensure ESP32-CAM is positioned with **flash LED facing downward**
+
 - Camera lens should face the subject
 - Small flash LED (next to lens) should point toward ground/subject
 - This provides natural lighting and prevents reflection issues
 
 ### Camera Issues
+
 ```bash
 # Check serial output for camera errors
 pio device monitor
@@ -406,6 +419,7 @@ Camera initialized: Yes/No
 ```
 
 ### WiFi Issues
+
 ```bash
 # Check WiFi connection status
 # Serial output will show:
@@ -414,6 +428,7 @@ Local IP address: [IP]
 ```
 
 ### Memory Issues
+
 ```bash
 # Monitor heap usage in serial output:
 Free heap: [bytes] bytes
@@ -423,6 +438,7 @@ Min free heap: [bytes] bytes
 ## Configuration Examples
 
 ### High Quality Images
+
 ```cpp
 // In camera_config.h
 .frame_size = FRAMESIZE_SVGA,  // 800x600
@@ -431,6 +447,7 @@ Min free heap: [bytes] bytes
 ```
 
 ### Low Memory Usage
+
 ```cpp
 // In camera_config.h  
 .frame_size = FRAMESIZE_QVGA,  // 320x240
@@ -439,6 +456,7 @@ Min free heap: [bytes] bytes
 ```
 
 ### Custom GPIO Pins
+
 ```ini
 # In platformio.ini
 build_flags = 
@@ -449,6 +467,7 @@ build_flags =
 ## Integration Tips
 
 ### MCP Client Configuration
+
 ```json
 {
   "mcpServers": {
@@ -462,6 +481,7 @@ build_flags =
 ```
 
 ### Home Assistant Integration
+
 ```yaml
 # configuration.yaml
 rest_command:
@@ -830,6 +850,7 @@ This enables direct HTTP requests from JavaScript running in web browsers, makin
 ### Testing CORS Support
 
 #### PowerShell CORS Test
+
 ```powershell
 # Run the CORS test script
 .\test_cors.ps1
@@ -842,6 +863,7 @@ This enables direct HTTP requests from JavaScript running in web browsers, makin
 ```
 
 #### Manual CORS Test
+
 ```powershell
 # Test OPTIONS preflight request
 $headers = @{

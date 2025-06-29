@@ -24,12 +24,14 @@ This project transforms an ESP32-CAM module into a remotely controllable camera 
 ## Installation
 
 1. Create a `.env` file in the project root with WiFi credentials:
+
 ```properties
 WIFI_SSID="YourNetwork"
 WIFI_PASSWORD="YourPassword"
 ```
 
 2. Build and upload:
+
 ```bash
 pio run --target upload
 pio device monitor
@@ -40,24 +42,29 @@ pio device monitor
 ## Available Tools
 
 ### LED Control
+
 - **Function**: Control built-in LED
 - **Parameters**: `state` ("on" or "off")
 
 ### Flash Control  
+
 - **Function**: Trigger camera flash
 - **Parameters**: `duration` (5-100ms, default 50ms)
 
 ### Image Capture
+
 - **Function**: Capture JPEG image
 - **Parameters**: `flash` ("on" or "off", optional)
 - **Output**: Base64-encoded JPEG image data
 - **Important**: Images are automatically resized to stay below 4KB base64 encoding limit due to AI client data constraints
 
 ### WiFi Status
+
 - **Function**: Network connection information
 - **Output**: IP address, signal strength, network details
 
 ### System Status
+
 - **Function**: Hardware diagnostics
 - **Output**: Memory usage, uptime, CPU frequency, camera status
 
@@ -66,6 +73,7 @@ pio device monitor
 The server accepts HTTP POST requests with JSON-RPC 2.0 format on port 80.
 
 ### Basic Request Structure
+
 ```json
 {
   "jsonrpc": "2024-11-05",
@@ -79,6 +87,7 @@ The server accepts HTTP POST requests with JSON-RPC 2.0 format on port 80.
 ```
 
 ### Example: Capture Image
+
 ```bash
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
@@ -94,6 +103,7 @@ curl -X POST http://192.168.1.100/ \
 ```
 
 ### Example: Control LED
+
 ```bash
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
@@ -111,6 +121,7 @@ curl -X POST http://192.168.1.100/ \
 ## Integration Examples
 
 ### Python Client
+
 ```python
 import requests
 import base64
@@ -138,6 +149,7 @@ def capture_image(esp32_ip):
 ```
 
 ### PowerShell
+
 ```powershell
 $payload = @{
     jsonrpc = "2024-11-05"
@@ -172,11 +184,13 @@ Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $payload -Cont
 ## Configuration Options
 
 ### Camera Quality Settings
+
 - **Resolution**: QVGA (320x240) recommended for size constraints
 - **JPEG Quality**: 12-20 (lower number = higher quality)
 - **Frame Buffers**: 1-2 buffers based on memory availability
 
 ### Network Settings
+
 - **Reconnection**: Automatic with 30-second intervals
 - **Watchdog**: 10-second timeout protection
 - **mDNS**: Automatic hostname assignment
@@ -184,13 +198,16 @@ Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $payload -Cont
 ## Troubleshooting
 
 ### Common Issues
+
 - **Camera Init Failed**: Check power supply (5V required)
 - **WiFi Connection**: Verify credentials and 2.4GHz network
 - **Memory Errors**: Reduce image quality or frame buffer count
 - **Large Images**: Adjust JPEG quality to stay under 4KB limit
 
 ### Debug Information
+
 Monitor serial output at 115200 baud for:
+
 - WiFi connection status
 - Camera initialization results
 - Memory usage statistics
@@ -199,6 +216,7 @@ Monitor serial output at 115200 baud for:
 ## Architecture
 
 The system consists of:
+
 - **MCP Protocol Handler**: JSON-RPC request processing
 - **Tool Handlers**: Individual function implementations
 - **Camera Manager**: Image capture and encoding

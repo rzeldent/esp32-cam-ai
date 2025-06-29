@@ -5,6 +5,7 @@
 #include <ArduinoOTA.h>
 #include <esp_camera.h>
 #include <esp_task_wdt.h>
+#include <soc/rtc_cntl_reg.h>
 
 #include <mcp.h>
 #include <base64.h>
@@ -27,6 +28,7 @@
 #define STR(x) STR_HELPER(x)
 
 // WiFi reconnection settings
+const unsigned long WIFI_REBOOT_DELAY = 60000; // 60 seconds
 const unsigned long WIFI_RECONNECT_INTERVAL = 30000; // 30 seconds
 const unsigned long WIFI_CHECK_INTERVAL = 5000;      // 5 seconds
 const int MAX_RECONNECT_ATTEMPTS = 5;
@@ -201,7 +203,7 @@ void checkWiFiConnection()
       {
         log_e("Max WiFi reconnection attempts reached. Will restart in 60 seconds...");
         // Reset attempt counter and wait longer before restart
-        if (now - lastReconnectAttempt >= 60000)
+        if (now - lastReconnectAttempt >= WIFI_REBOOT_DELAY)
         {
           log_e("Restarting ESP32 due to WiFi connection failure...");
           ESP.restart();
@@ -429,6 +431,7 @@ void handleRoot()
   }
 
   auto response = mcp_response.get_http_response();
+  // Http Code, Content-Type, and Body
   log_i("Sending response: %d %s %s", std::get<0>(response), std::get<1>(response), std::get<2>(response).c_str());
   server.send(std::get<0>(response), std::get<1>(response), std::get<2>(response));
 }
@@ -462,6 +465,9 @@ void onWiFiEvent(WiFiEvent_t event)
 
 void setup()
 {
+    // Disable brownout
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
   Serial.begin(115200);
 
   // Initialize watchdog timer
@@ -500,11 +506,16 @@ void setup()
   auto hostName = "esp32-" + WiFi.macAddress() + ".local";
   hostName.replace(":", "");
   hostName.toLowerCase();
-  log_i("MDNS hostname: %s", hostName.c_str());
+  log_i("mDNS hostname: %s", hostName.c_str());
   MDNS.begin(hostName.c_str());
+  MDNS.addService("_jsonrpc", "_tcp", 80);
+  MDNS.addServiceTxt("_jsonrpc", "_tcp", "version", "2.0");
+  MDNS.addServiceTxt("_jsonrpc", "_tcp", "protocol", "http");
+  MDNS.addServiceTxt("_jsonrpc", "_tcp", "path", "/");
 
   // Allow over the air updates
   ArduinoOTA.begin();
+
   // Initialize camera
   camera_init_result = esp_camera_init(&esp32cam_aithinker_settings);
   if (camera_init_result != ESP_OK)

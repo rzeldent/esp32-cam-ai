@@ -125,12 +125,16 @@ Look for the IP address in the serial output:
 
 ```plaintext
 Local IP address: 192.168.1.132
+
+or
+
+mDNS hostname: esp32-7c9ebdf16a10.local
 ```
 
 Other ways to find the IP address are
 
 - Look in the DHCP server for the IP reservation
-- Do a mDNS check for port 80
+- Do a mDNS check for port 80 for _jsonrpc using avahi
 
 ## Configuration
 
@@ -431,7 +435,7 @@ Failed to connect to WiFi. Error code: [code]
 
 #### Build Errors
 
-```
+```plaintext
 WIFI_SSID is not defined. Please define it in your environment variables or in the code.
 WIFI_PASSWORD is not defined. Please define it in your environment variables or in the code.
 ```
