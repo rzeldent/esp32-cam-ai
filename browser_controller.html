@@ -3,16 +3,23 @@
 <head>
     <title>ESP32-CAM Browser Controller</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .controls { margin: 20px 0; }
-        button { margin: 5px; padding: 10px 20px; font-size: 16px; }
+        button { margin: 5px; padding: 10px 20px; font-size: 16px; border: none; border-radius: 4px; cursor: pointer; background: #007bff; color: white; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
         .status { margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 5px; }
         .image-container { margin: 20px 0; text-align: center; }
-        .image-container img { max-width: 100%; border: 1px solid #ccc; }
-        .error { color: red; }
-        .success { color: green; }
-        .response { font-family: monospace; background: #f8f8f8; padding: 10px; margin: 10px 0; border-radius: 5px; max-height: 300px; overflow-y: auto; }
+        .image-container img { max-width: 100%; border: 1px solid #ccc; border-radius: 4px; }
+        .error { color: red; background: #ffe6e6; border-left: 4px solid red; }
+        .success { color: green; background: #e6ffe6; border-left: 4px solid green; }
+        .response { font-family: monospace; background: #f8f8f8; padding: 10px; margin: 10px 0; border-radius: 5px; max-height: 300px; overflow-y: auto; border: 1px solid #ddd; }
+        .hidden { display: none; }
+        .visible { display: block; }
+        .url-input { width: 300px; padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+        .control-group { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 4px; }
+        .control-group h3 { margin-top: 0; color: #333; }
     </style>
 </head>
 <body>
@@ -20,30 +27,44 @@
         <h1>ESP32-CAM Browser Controller</h1>
         <p>This page demonstrates direct browser access to the ESP32-CAM MCP server using CORS headers.</p>
         
-        <div class="controls">
+        <div class="control-group">
+            <h3>Connection Settings</h3>
             <label for="esp32-url">ESP32-CAM URL:</label>
-            <input type="text" id="esp32-url" value="http://esp32-7c9ebdf16a10.local" style="width: 300px;">
+            <input type="text" id="esp32-url" value="http://esp32-7c9ebdf16a10.local" class="url-input">
+            <button onclick="testConnection()">Test Connection</button>
         </div>
 
-        <div class="controls">
+        <div class="control-group">
+            <h3>MCP Protocol</h3>
             <button onclick="initialize()">Initialize MCP</button>
             <button onclick="listTools()">List Tools</button>
+        </div>
+
+        <div class="control-group">
+            <h3>System Information</h3>
             <button onclick="getStatus()">System Status</button>
             <button onclick="getWiFiStatus()">WiFi Status</button>
         </div>
 
-        <div class="controls">
+        <div class="control-group">
+            <h3>Camera Controls</h3>
             <button onclick="ledOn()">LED On</button>
             <button onclick="ledOff()">LED Off</button>
             <button onclick="flashCamera()">Flash Camera</button>
-            <button onclick="captureImage()">Capture Image</button>
+            <button onclick="captureImage('off')">Capture Image (No Flash)</button>
+            <button onclick="captureImage('on')">Capture Image (With Flash)</button>
         </div>
 
         <div id="status" class="status">Ready to connect...</div>
         
-        <div id="response" class="response" style="display: none;"></div>
+        <div class="control-group">
+            <h3>Response Data</h3>
+            <button onclick="clearResponse()">Clear Response</button>
+        </div>
         
-        <div id="image-container" class="image-container" style="display: none;">
+        <div id="response" class="response hidden"></div>
+        
+        <div id="image-container" class="image-container hidden">
             <h3>Captured Image:</h3>
             <img id="captured-image" alt="Captured from ESP32-CAM">
         </div>
@@ -53,22 +74,78 @@
         let requestId = 1;
 
         function getESP32URL() {
-            return document.getElementById('esp32-url').value;
+            const url = document.getElementById('esp32-url').value.trim();
+            if (!url) {
+                updateStatus('Please enter a valid ESP32-CAM URL', true);
+                return null;
+            }
+            // Ensure URL starts with http:// or https://
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                return 'http://' + url;
+            }
+            return url;
         }
 
         function updateStatus(message, isError = false) {
             const statusDiv = document.getElementById('status');
             statusDiv.textContent = message;
             statusDiv.className = isError ? 'status error' : 'status success';
+            
+            // Auto-clear success messages after 5 seconds
+            if (!isError) {
+                setTimeout(() => {
+                    if (statusDiv.textContent === message) {
+                        statusDiv.textContent = 'Ready...';
+                        statusDiv.className = 'status';
+                    }
+                }, 5000);
+            }
         }
 
         function showResponse(response) {
             const responseDiv = document.getElementById('response');
             responseDiv.textContent = JSON.stringify(response, null, 2);
-            responseDiv.style.display = 'block';
+            responseDiv.className = 'response visible';
+        }
+
+        function clearResponse() {
+            const responseDiv = document.getElementById('response');
+            responseDiv.textContent = '';
+            responseDiv.className = 'response hidden';
+            updateStatus('Response cleared');
+        }
+
+        async function testConnection() {
+            const url = getESP32URL();
+            if (!url) {
+                return;
+            }
+            
+            try {
+                updateStatus('Testing connection...');
+                const response = await fetch(url, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': window.location.origin
+                    }
+                });
+                
+                if (response.ok) {
+                    updateStatus(`Connection successful! ESP32-CAM is reachable at ${url}`);
+                } else {
+                    updateStatus(`Connection test failed: HTTP ${response.status}`, true);
+                }
+            } catch (error) {
+                updateStatus(`Connection test failed: ${error.message}`, true);
+            }
         }
 
         async function sendMCPRequest(method, params = null) {
+            const url = getESP32URL();
+            if (!url) {
+                return null;
+            }
+            
             const payload = {
                 jsonrpc: "2024-11-05",
                 id: requestId++,
@@ -82,7 +159,7 @@
             try {
                 updateStatus(`Sending ${method} request...`);
                 
-                const response = await fetch(getESP32URL(), {
+                const response = await fetch(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -105,7 +182,11 @@
                     return data.result;
                 }
             } catch (error) {
-                updateStatus(`Request failed: ${error.message}`, true);
+                let errorMessage = error.message;
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    errorMessage = `Connection failed - check if ESP32-CAM is online and URL is correct`;
+                }
+                updateStatus(`Request failed: ${errorMessage}`, true);
                 console.error('Request error:', error);
                 return null;
             }
@@ -134,24 +215,33 @@
         }
 
         async function ledOn() {
-            await sendMCPRequest('tools/call', {
+            const result = await sendMCPRequest('tools/call', {
                 name: 'led',
                 arguments: { state: 'on' }
             });
+            if (result) {
+                updateStatus('LED turned on');
+            }
         }
 
         async function ledOff() {
-            await sendMCPRequest('tools/call', {
+            const result = await sendMCPRequest('tools/call', {
                 name: 'led',
                 arguments: { state: 'off' }
             });
+            if (result) {
+                updateStatus('LED turned off');
+            }
         }
 
         async function flashCamera() {
-            await sendMCPRequest('tools/call', {
+            const result = await sendMCPRequest('tools/call', {
                 name: 'flash',
-                arguments: { duration: 100 }
+                arguments: {}
             });
+            if (result) {
+                updateStatus('Flash executed');
+            }
         }
 
         async function getStatus() {
@@ -168,21 +258,38 @@
             });
         }
 
-        async function captureImage() {
+        async function captureImage(flash = 'off') {
             const result = await sendMCPRequest('tools/call', {
                 name: 'capture',
-                arguments: { flash: 'on' }
+                arguments: { flash: flash }
             });
 
-            if (result && result.content && result.content.length > 1) {
-                const imageContent = result.content[1];
-                if (imageContent.type === 'image') {
-                    const imageData = imageContent.data;
-                    const img = document.getElementById('captured-image');
-                    img.src = `data:image/jpeg;base64,${imageData}`;
-                    document.getElementById('image-container').style.display = 'block';
-                    updateStatus(`Image captured (${imageData.length} bytes base64)`);
+            if (result && result.content && result.content.length > 0) {
+                // Look for the image content in the response
+                let imageContent = null;
+                let textContent = null;
+                
+                for (let i = 0; i < result.content.length; i++) {
+                    const content = result.content[i];
+                    if (content.type === 'image') {
+                        imageContent = content;
+                    } else if (content.type === 'text') {
+                        textContent = content;
+                    }
                 }
+                
+                if (imageContent && imageContent.data) {
+                    const img = document.getElementById('captured-image');
+                    img.src = `data:${imageContent.mimeType || 'image/jpeg'};base64,${imageContent.data}`;
+                    document.getElementById('image-container').className = 'image-container visible';
+                    
+                    const statusMsg = textContent ? textContent.text : `Image captured (${imageContent.data.length} bytes base64)`;
+                    updateStatus(statusMsg);
+                } else {
+                    updateStatus('Image capture succeeded but no image data found in response', true);
+                }
+            } else {
+                updateStatus('Image capture failed or returned empty response', true);
             }
         }
 

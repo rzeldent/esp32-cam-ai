@@ -4,7 +4,9 @@ A Model Context Protocol (MCP) server implementation for ESP32-CAM that enables 
 
 [![Platform IO CI](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml/badge.svg)](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml)
 
-[![ESP32-CAM-AI](assets/images//esp32-cam-ai.png)](assets/images/esp32-cam-ai.png)
+[<img src="assets/images/esp32-cam-ai.png" alt="ESP32-CAM-AI" width="320">](assets/images/esp32-cam-ai.png)
+[<img src="assets/images/example-conversation.png" width="320">](assets/images/example-conversation.png)
+
 ## Overview
 
 This project transforms an ESP32-CAM into a remotely controllable MCP server that can capture images, control LEDs, manage flash lighting, and provide system diagnostics. The server exposes these capabilities through the Model Context Protocol, making it easy to integrate with AI assistants and automation systems.

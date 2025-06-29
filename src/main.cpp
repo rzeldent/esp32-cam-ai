@@ -91,8 +91,8 @@ void handle_tools_list(mcp_response &response)
   auto led_tool_input_schema_properties_state_enum_array = led_tool_input_schema_properties_state["enum"].to<JsonArray>();
   led_tool_input_schema_properties_state_enum_array.add("on");
   led_tool_input_schema_properties_state_enum_array.add("off");
-  auto led_tool_input_schema_required = led_tool_input_schema["required"].to<JsonArray>();
-  led_tool_input_schema_required.add("state");
+  auto led_tool_input_schema_properties_state_required = led_tool_input_schema_properties_state["required"].to<JsonArray>();
+  led_tool_input_schema_properties_state_required.add("state");
   led_tool_input_schema["additionalProperties"] = false;
 
   // Add Flash control tool
