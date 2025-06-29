@@ -50,6 +50,7 @@ public:
     }
 
 private:
+    JsonDocument doc_;
     String jsonrpc_;
     JsonVariant id_;
     String method_;
@@ -61,10 +62,10 @@ struct mcp_response
     mcp_response(const String &jsonrpc = "2.0");
 
     mcp_response &set_id(const JsonVariant &id);
-    mcp_response &set_error(error_code code, const String &message);
+    JsonObject create_error();
     JsonObject create_result();
 
-    std::tuple<int, String, String> get_http_response() const;
+    std::tuple<int, const char*, String> get_http_response() const;
 
 private:
     JsonDocument doc_;

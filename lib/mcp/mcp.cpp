@@ -8,20 +8,22 @@ mcp_exception::mcp_exception(error_code code, const String &message)
 mcp_request::mcp_request(const String &request)
     : jsonrpc_("2.0")
 {
-    JsonDocument doc;
-    auto error = deserializeJson(doc, request);
+    auto error = deserializeJson(doc_, request);
     if (error)
         throw mcp_exception(error_code::parse_error, "Failed to parse JSON request: " + String(error.c_str()));
 
-    if (doc.is<JsonObject>())
+    if (doc_.is<JsonObject>())
     {
-        auto request = doc.as<JsonObject>();
+        auto request = doc_.as<JsonObject>();
         if (request["jsonrpc"].is<String>())
             jsonrpc_ = request["jsonrpc"].as<String>();
+
         if (request["id"].is<JsonVariant>())
             id_ = request["id"];
+
         if (request["method"].is<String>())
             method_ = request["method"].as<String>();
+
         if (request["params"].is<JsonObject>())
             params_ = request["params"].as<JsonObject>();
     }
@@ -39,21 +41,17 @@ mcp_response &mcp_response::set_id(const JsonVariant &id)
     return *this;
 }
 
-mcp_response &mcp_response::set_error(error_code code, const String &message)
+JsonObject mcp_response::create_error()
 {
-    auto error = root_["error"].as<JsonObject>();
-    error["code"] = static_cast<int>(code);
-    error["message"] = message;
-    root_["error"] = error;
-    return *this;
+    return root_["error"].to<JsonObject>();
 }
 
 JsonObject mcp_response::create_result()
 {
-    return root_["result"].as<JsonObject>();
+    return root_["result"].to<JsonObject>();
 }
 
-std::tuple<int, String, String> mcp_response::get_http_response() const
+std::tuple<int, const char *, String> mcp_response::get_http_response() const
 {
     String json;
     try
@@ -62,11 +60,9 @@ std::tuple<int, String, String> mcp_response::get_http_response() const
     }
     catch (const std::exception &e)
     {
-        return {500, String("text/plain"), String("Internal Server Error: ") + String(e.what())}; // Internal Server Error
+        return {500, "text/plain", String("Internal Server Error: ") + String(e.what())}; // Internal Server Error
     }
 
-    if (root_["error"].is<JsonObject>())
-        return {400, String("application/json"), json}; // Bad Request
-
-    return {200, String("application/json"), json}; // OK
+    auto http_code = root_["error"].is<JsonObject>() ? 400 : 200; // If error is present, return 400 Bad Request, else 200 OK
+    return {http_code, "application/json", json};                 // OK
 }

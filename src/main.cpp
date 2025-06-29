@@ -39,6 +39,8 @@ unsigned long lastReconnectAttempt = 0;
 int reconnectAttempts = 0;
 bool wifiConnected = false;
 
+esp_err_t camera_init_result = ESP_OK;
+
 WebServer server(80);
 
 void handle_initialize(mcp_response &response)
@@ -62,63 +64,80 @@ void handle_tools_list(mcp_response &response)
   auto led_tool = tools.add<JsonObject>();
   led_tool["name"] = "led";
   led_tool["description"] = "Controls the ESP32-CAM LED state";
-  auto led_input_schema = led_tool["inputSchema"].to<JsonObject>();
-  led_input_schema["type"] = "object";
-  auto led_properties = led_input_schema["properties"].to<JsonObject>();
-  auto state_prop = led_properties["state"].to<JsonObject>();
-  state_prop["type"] = "string";
-  state_prop["description"] = "LED state";
-  auto enum_array = state_prop["enum"].to<JsonArray>();
-  enum_array.add("on");
-  enum_array.add("off");
-  auto required = led_input_schema["required"].to<JsonArray>();
-  required.add("state");
-  led_input_schema["additionalProperties"] = false;
+  auto led_tool_input_schema = led_tool["inputSchema"].to<JsonObject>();
+  led_tool_input_schema["type"] = "object";
+  auto led_tool_input_schema_properties = led_tool_input_schema["properties"].to<JsonObject>();
+  auto led_tool_input_schema_properties_state = led_tool_input_schema_properties["state"].to<JsonObject>();
+  led_tool_input_schema_properties_state["type"] = "string";
+  led_tool_input_schema_properties_state["description"] = "LED state";
+  auto led_tool_input_schema_properties_state_enum_array = led_tool_input_schema_properties_state["enum"].to<JsonArray>();
+  led_tool_input_schema_properties_state_enum_array.add("on");
+  led_tool_input_schema_properties_state_enum_array.add("off");
+  auto led_tool_input_schema_required = led_tool_input_schema["required"].to<JsonArray>();
+  led_tool_input_schema_required.add("state");
+  led_tool_input_schema["additionalProperties"] = false;
+
+  // Add Flash control tool
+  auto flash_tool = tools.add<JsonObject>();
+  flash_tool["name"] = "flash";
+  flash_tool["description"] = "Controls the ESP32-CAM Flash";
+  auto flash_tool_input_schema = flash_tool["inputSchema"].to<JsonObject>();
+  flash_tool_input_schema["type"] = "object";
+  auto flash_tool_input_schema_properties = flash_tool_input_schema["properties"].to<JsonObject>();
+  auto flash_tool_input_schema_properties_duration = led_tool_input_schema_properties["duration"].to<JsonObject>();
+  flash_tool_input_schema_properties_duration["description"] = "Flash duration in milliseconds";
+  flash_tool_input_schema_properties_duration["type"] = "number";
+  flash_tool_input_schema_properties_duration["minimum"] = 5;
+  flash_tool_input_schema_properties_duration["maximum"] = 100;
+  flash_tool_input_schema_properties_duration["default"] = 50;
+  flash_tool_input_schema["additionalProperties"] = false;
 
   // Add camera capture tool
   auto camera_tool = tools.add<JsonObject>();
   camera_tool["name"] = "capture";
   camera_tool["description"] = "Captures a photo from the ESP32-CAM";
-  auto camera_input_schema = camera_tool["inputSchema"].to<JsonObject>();
-  camera_input_schema["type"] = "object";
-  auto camera_properties = camera_input_schema["properties"].to<JsonObject>();
-  camera_input_schema["additionalProperties"] = false;
+  auto camera_tool_input_schema = camera_tool["inputSchema"].to<JsonObject>();
+  camera_tool_input_schema["type"] = "object";
+  auto camera_tool_input_schema_properties = camera_tool_input_schema["properties"].to<JsonObject>();
+  auto camera_tool_input_schema_properties_flash = camera_tool_input_schema_properties["flash"].to<JsonObject>();
+  camera_tool_input_schema_properties_flash["type"] = "string";
+  camera_tool_input_schema_properties_flash["description"] = "Use flash when capturing";
+  auto camera_tool_input_schema_properties_flash_enum_array = camera_tool_input_schema_properties_flash["enum"].to<JsonArray>();
+  camera_tool_input_schema_properties_flash_enum_array.add("on");
+  camera_tool_input_schema_properties_flash_enum_array.add("off");
+  camera_tool_input_schema["additionalProperties"] = false;
 
   // Add WiFi status tool
   auto wifi_tool = tools.add<JsonObject>();
   wifi_tool["name"] = "wifi_status";
   wifi_tool["description"] = "Gets current WiFi connection status and network information";
-  auto wifi_input_schema = wifi_tool["inputSchema"].to<JsonObject>();
-  wifi_input_schema["type"] = "object";
-  auto wifi_properties = wifi_input_schema["properties"].to<JsonObject>();
-  wifi_input_schema["additionalProperties"] = false;
+  auto wifi_tool_input_schema = wifi_tool["inputSchema"].to<JsonObject>();
+  wifi_tool_input_schema["type"] = "object";
+  auto wifi_tool_input_schema_properties = wifi_tool_input_schema["properties"].to<JsonObject>();
+  wifi_tool_input_schema["additionalProperties"] = false;
 
   // Add system status tool
   auto system_tool = tools.add<JsonObject>();
   system_tool["name"] = "system_status";
   system_tool["description"] = "Gets comprehensive system status including memory, uptime, and hardware info";
-  auto system_input_schema = system_tool["inputSchema"].to<JsonObject>();
-  system_input_schema["type"] = "object";
-  auto system_properties = system_input_schema["properties"].to<JsonObject>();
-  system_input_schema["additionalProperties"] = false;
+  auto system_tool_input_schema = system_tool["inputSchema"].to<JsonObject>();
+  system_tool_input_schema["type"] = "object";
+  auto system_tool_input_schema_properties = system_tool_input_schema["properties"].to<JsonObject>();
+  system_tool_input_schema["additionalProperties"] = false;
 }
 
 void checkWiFiConnection()
 {
-  unsigned long currentTime = millis();
-
+  auto now = millis();
   // Check WiFi status periodically
-  if (currentTime - lastWiFiCheck >= WIFI_CHECK_INTERVAL)
+  if (now - lastWiFiCheck >= WIFI_CHECK_INTERVAL)
   {
-    lastWiFiCheck = currentTime;
-
-    bool currentStatus = (WiFi.status() == WL_CONNECTED);
-
+    lastWiFiCheck = now;
+    bool currentStatus = WiFi.status() == WL_CONNECTED;
     // Status changed
     if (currentStatus != wifiConnected)
     {
       wifiConnected = currentStatus;
-
       if (wifiConnected)
       {
         log_i("WiFi reconnected! IP: %s", WiFi.localIP().toString().c_str());
@@ -132,10 +151,9 @@ void checkWiFiConnection()
     }
 
     // Attempt reconnection if disconnected
-    if (!wifiConnected && (currentTime - lastReconnectAttempt >= WIFI_RECONNECT_INTERVAL))
+    if (!wifiConnected && (now - lastReconnectAttempt >= WIFI_RECONNECT_INTERVAL))
     {
-      lastReconnectAttempt = currentTime;
-
+      lastReconnectAttempt = now;
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS)
       {
         reconnectAttempts++;
@@ -146,11 +164,9 @@ void checkWiFiConnection()
         WiFi.begin(STR(WIFI_SSID), STR(WIFI_PASSWORD));
 
         // Wait for connection with timeout
-        unsigned long connectStart = millis();
+        auto connectStart = millis();
         while (WiFi.status() != WL_CONNECTED && (millis() - connectStart) < 10000)
-        {
           delay(500);
-        }
 
         if (WiFi.status() == WL_CONNECTED)
         {
@@ -167,7 +183,7 @@ void checkWiFiConnection()
       {
         log_e("Max WiFi reconnection attempts reached. Will restart in 60 seconds...");
         // Reset attempt counter and wait longer before restart
-        if (currentTime - lastReconnectAttempt >= 60000)
+        if (now - lastReconnectAttempt >= 60000)
         {
           log_e("Restarting ESP32 due to WiFi connection failure...");
           ESP.restart();
@@ -177,39 +193,111 @@ void checkWiFiConnection()
   }
 }
 
-void getWiFiStatus(mcp_response &response)
+void tool_led(JsonObject arguments, mcp_response &response)
 {
-  auto result = response.create_result();
-  auto content = result["content"].to<JsonArray>();
-  auto item = content.add<JsonObject>();
-  item["type"] = "text";
-
-  String status_text = "WiFi Status:\n";
-  status_text += "Connected: " + String(wifiConnected ? "Yes" : "No") + "\n";
-
-  if (wifiConnected)
+  auto state = arguments["state"].as<String>();
+  if (state == "on")
   {
-    status_text += "IP Address: " + WiFi.localIP().toString() + "\n";
-    status_text += "Signal Strength: " + String(WiFi.RSSI()) + " dBm\n";
-    status_text += "MAC Address: " + WiFi.macAddress() + "\n";
-    status_text += "Gateway: " + WiFi.gatewayIP().toString() + "\n";
-    status_text += "DNS: " + WiFi.dnsIP().toString() + "\n";
+    digitalWrite(LED_GPIO, LED_ON_LEVEL);
+    auto result = response.create_result();
+    auto result_content = result["content"].to<JsonArray>();
+    auto result_content_item = result_content.add<JsonObject>();
+    result_content_item["type"] = "text";
+    result_content_item["text"] = "LED turned on";
+  }
+  else if (state == "off")
+  {
+    digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW);
+    auto result = response.create_result();
+    auto result_content = result["content"].to<JsonArray>();
+    auto result_content_item = result_content.add<JsonObject>();
+    result_content_item["type"] = "text";
+    result_content_item["text"] = "LED turned off";
   }
   else
   {
-    status_text += "Reconnect Attempts: " + String(reconnectAttempts) + "/" + String(MAX_RECONNECT_ATTEMPTS) + "\n";
-    status_text += "Last Attempt: " + String((millis() - lastReconnectAttempt) / 1000) + " seconds ago\n";
+    auto error = response.create_error();
+    error["code"] = error_code::invalid_params;
+    error["message"] = "Invalid LED state. Use 'on' or 'off'.";
   }
-
-  item["text"] = status_text;
 }
 
-void getSystemStatus(mcp_response &response)
+void tool_flash(JsonObject arguments, mcp_response &response)
+{
+  auto duration = arguments["duration"].as<int>();
+  digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
+  delay(duration); // 5-100ms
+  digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
+  auto result = response.create_result();
+  auto result_content = result["content"].to<JsonArray>();
+  auto result_content_item = result_content.add<JsonObject>();
+  result_content_item["type"] = "text";
+  result_content_item["text"] = "Flash executed";
+}
+
+void tool_capture(JsonObject arguments, mcp_response &response)
+{
+  if (camera_init_result != ESP_OK)
+  {
+    auto error = response.create_error();
+    error["code"] = error_code::internal_error;
+    error["message"] = "Camera not initialized or failed to initialize";
+    return;
+  }
+
+  auto flash = arguments["flash"].as<String>();
+  if (flash == "on")
+    digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
+
+  auto fb = esp_camera_fb_get();
+
+  digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
+
+  if (!fb)
+  {
+    auto error = response.create_error();
+    error["code"] = error_code::internal_error;
+    error["message"] = "Camera capture failed";
+    return;
+  }
+
+  auto base64_image = base64::encode(fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+
+  auto result = response.create_result();
+  auto result_content = result["content"].to<JsonArray>();
+  auto result_content_item = result_content.add<JsonObject>();
+  result_content_item["type"] = "text";
+  result_content_item["text"] = "Image captured successfully. Size: " + String(base64_image.length()) + " bytes (base64 encoded)";
+
+  auto result_content_image_item = result_content.add<JsonObject>();
+  result_content_image_item["type"] = "image";
+  result_content_image_item["data"] = "data:image/jpeg;base64," + base64_image;
+  result_content_image_item["mimeType"] = "image/jpeg";
+}
+
+void tool_wifi_status(mcp_response &response)
 {
   auto result = response.create_result();
-  auto content = result["content"].to<JsonArray>();
-  auto item = content.add<JsonObject>();
-  item["type"] = "text";
+  auto result_content = result["content"].to<JsonArray>();
+  auto result_content_item = result_content.add<JsonObject>();
+  result_content_item["type"] = "text";
+
+  String status_text;
+  status_text += "IP Address: " + WiFi.localIP().toString() + "\n";
+  status_text += "Signal Strength: " + String(WiFi.RSSI()) + " dBm\n";
+  status_text += "MAC Address: " + WiFi.macAddress() + "\n";
+  status_text += "Gateway: " + WiFi.gatewayIP().toString() + "\n";
+  status_text += "DNS: " + WiFi.dnsIP().toString() + "\n";
+  result_content_item["text"] = status_text;
+}
+
+void tool_system_status(mcp_response &response)
+{
+  auto result = response.create_result();
+  auto result_content = result["content"].to<JsonArray>();
+  auto result_content_item = result_content.add<JsonObject>();
+  result_content_item["type"] = "text";
 
   String status_text = "System Status:\n";
   status_text += "Uptime: " + String(millis() / 1000) + " seconds\n";
@@ -223,20 +311,8 @@ void getSystemStatus(mcp_response &response)
   status_text += "Free Sketch Space: " + String(ESP.getFreeSketchSpace()) + " bytes\n";
   status_text += "SDK Version: " + String(ESP.getSdkVersion()) + "\n";
   status_text += "Reset Reason: " + String(esp_reset_reason()) + "\n";
-
-  // Camera status
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (fb)
-  {
-    status_text += "Camera: Working (Last capture: " + String(fb->len) + " bytes)\n";
-    esp_camera_fb_return(fb);
-  }
-  else
-  {
-    status_text += "Camera: Error - Unable to capture\n";
-  }
-
-  item["text"] = status_text;
+  status_text += "Camera initialized: " + String(camera_init_result == ESP_OK ? "Yes" : "No") + "\n";
+  result_content_item["text"] = status_text;
 }
 
 void handle_tools_call(const mcp_request &request, mcp_response &response)
@@ -246,72 +322,34 @@ void handle_tools_call(const mcp_request &request, mcp_response &response)
   auto arguments = params["arguments"].as<JsonObject>();
 
   if (tool_name == "led")
+    tool_led(arguments, response);
+  else if (tool_name == "flash")
+    tool_flash(arguments, response);
+  else if (tool_name == "capture")
+    tool_capture(arguments, response);
+  else if (tool_name == "wifi_status")
+    tool_wifi_status(response);
+  else if (tool_name == "system_status")
+    tool_system_status(response);
+  else
   {
-    auto state = arguments["state"].as<String>();
-    if (state == "on")
+    // Tool not found, set error
+    auto error = response.create_error();
+    if (tool_name.isEmpty())
     {
-      digitalWrite(LED_GPIO, LED_ON_LEVEL);
-      auto result = response.create_result();
-      auto content = result["content"].to<JsonArray>();
-      auto item = content.add<JsonObject>();
-      item["type"] = "text";
-      item["text"] = "LED turned on";
-    }
-    else if (state == "off")
-    {
-      digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW);
-      auto result = response.create_result();
-      auto content = result["content"].to<JsonArray>();
-      auto item = content.add<JsonObject>();
-      item["type"] = "text";
-      item["text"] = "LED turned off";
+      error["code"] = error_code::invalid_request;
+      error["message"] = "Tool name is required";
     }
     else
     {
-      response.set_error(error_code::invalid_params, "Invalid LED state. Use 'on' or 'off'.");
+      error["code"] = error_code::method_not_found;
+      error["message"] = "Unknown tool: " + tool_name;
     }
   }
-  else if (tool_name == "capture")
-  {
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb)
-    {
-      response.set_error(error_code::internal_error, "Camera capture failed");
-      return;
-    }
-
-    // Convert to base64
-    String base64_image = base64::encode(fb->buf, fb->len);
-    esp_camera_fb_return(fb);
-
-    auto result = response.create_result();
-    auto content = result["content"].to<JsonArray>();
-    auto item = content.add<JsonObject>();
-    item["type"] = "text";
-    item["text"] = "Image captured successfully. Size: " + String(base64_image.length()) + " bytes (base64 encoded)";
-
-    auto image_item = content.add<JsonObject>();
-    image_item["type"] = "image";
-    image_item["data"] = "data:image/jpeg;base64," + base64_image;
-    image_item["mimeType"] = "image/jpeg";
-  }
-  else if (tool_name == "wifi_status")
-    getWiFiStatus(response);
-  else if (tool_name == "system_status")
-    getSystemStatus(response);
-  else
-    response.set_error(error_code::method_not_found, "Unknown tool: " + tool_name);
 }
 
 void handleRoot()
 {
-  // Check if WiFi is connected before processing requests
-  if (!wifiConnected)
-  {
-    server.send(503, "text/plain", "Service Unavailable - WiFi not connected");
-    return;
-  }
-
   if (server.method() != HTTP_POST)
   {
     server.send(405, "text/plain", "Only POST allowed");
@@ -319,7 +357,6 @@ void handleRoot()
   }
 
   mcp_response mcp_response;
-
   try
   {
     mcp_request mcp_request(server.arg("plain"));
@@ -333,19 +370,21 @@ void handleRoot()
     else if (mcp_request.method() == "tools/call")
       handle_tools_call(mcp_request, mcp_response);
     else
-      mcp_response.set_error(error_code::method_not_found, "Method not found: " + mcp_request.method());
+    {
+      auto error = mcp_response.create_error();
+      error["code"] = error_code::method_not_found;
+      error["message"] = "Method not found: " + mcp_request.method();
+    }
   }
   catch (const mcp_exception &e)
   {
-    mcp_response.set_error(e.code(), e.what());
+    auto error = mcp_response.create_error();
+    error["code"] = e.code();
+    error["message"] = e.what();
   }
 
   auto response = mcp_response.get_http_response();
-log_i("response 0: %d", std::get<0>(response));
-log_i("response 1: %s", std::get<1>(response).c_str());
-log_i("response 2: %s", std::get<2>(response).c_str());
-log_i("response 1: %s", std::get<1>(response).c_str());
-  log_i("Sending response: %d %s %s", std::get<0>(response), std::get<1>(response).c_str(), std::get<2>(response).c_str());
+  log_i("Sending response: %d %s %s", std::get<0>(response), std::get<1>(response), std::get<2>(response).c_str());
   server.send(std::get<0>(response), std::get<1>(response), std::get<2>(response));
 }
 
@@ -384,9 +423,11 @@ void setup()
   esp_task_wdt_init(WATCHDOG_TIMEOUT / 1000, true);
   esp_task_wdt_add(NULL);
 
-  // Initialize LED GPIO
+  // Initialize LED GPIOs
   pinMode(LED_GPIO, OUTPUT);
   digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
+  pinMode(FLASH_GPIO, OUTPUT);
+  digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
 
   log_i("CPU Freq: %d Mhz", getCpuFrequencyMhz());
   log_i("Free heap: %d bytes", ESP.getFreeHeap());
@@ -420,7 +461,7 @@ void setup()
   // Allow over the air updates
   ArduinoOTA.begin();
 
-  auto camera_init_result = esp_camera_init(&esp32cam_aithinker_settings);
+  camera_init_result = esp_camera_init(&esp32cam_aithinker_settings);
   if (camera_init_result != ESP_OK)
     log_e("Camera init failed with error 0x%x", camera_init_result);
 
@@ -439,7 +480,7 @@ void loop()
   // Handle web server requests only if WiFi is connected
   if (wifiConnected)
     server.handleClient();
-  
+
   // Handle OTA (works even with WiFi issues for recovery)
   ArduinoOTA.handle();
 }
