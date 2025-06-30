@@ -18,7 +18,7 @@ jobs:
         uses: baileyjm02/markdown-to-pdf@v1
         with:
           input_file: *.md
-          output_dir: pdfs
+          output_dir: pdf
           build_pdf: true
           build_html: false
 
@@ -58,4 +58,4 @@ jobs:
           path: |
             .pio/build/${{ matrix.environment }}*/*.bin
             .pio/build//${{ matrix.environment }}/*.txt
-            .pio/build/*.pdf
+            .pio/pdf/*.pdf
