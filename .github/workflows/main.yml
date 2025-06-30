@@ -46,7 +46,5 @@ jobs:
       - name: Upload firmwares
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.environment }}.zip
-          path: |
-            .pio/build/${{ matrix.environment }}*/*.bin
-            artifacts/${{ matrix.environment }}/*.txt
+          name: ${{ matrix.environment }}
+          path: artifacts/${{ matrix.environment }}/*/**/.*
