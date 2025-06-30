@@ -14,14 +14,6 @@ jobs:
         with:
           submodules: 'true'      
     
-      - name: Convert Markdown to PDF
-        uses: baileyjm02/markdown-to-pdf@v1
-        with:
-          input_dir: ./
-          output_dir: pdf
-          build_pdf: true
-          build_html: false
-
       - uses: actions/cache@v4
         with:
           path: |
@@ -57,5 +49,4 @@ jobs:
           name: ${{ matrix.environment }}.zip
           path: |
             .pio/build/${{ matrix.environment }}*/*.bin
-            .pio/build//${{ matrix.environment }}/*.txt
-            .pio/pdf/*.pdf
+            artifacts/${{ matrix.environment }}/*.txt
