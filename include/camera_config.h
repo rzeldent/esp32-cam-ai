@@ -23,9 +23,11 @@ constexpr camera_config_t esp32cam_settings = {
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size = FRAMESIZE_QVGA,
-    .jpeg_quality = 25,
-    .fb_count = 1};
+    .frame_size = FRAMESIZE_VGA,
+    .jpeg_quality = 20,
+    .fb_count = 1,
+    .fb_location = CAMERA_FB_IN_PSRAM // Use PSRAM for frame buffer
+};
 
 constexpr camera_config_t esp32cam_aithinker_settings = {
     .pin_pwdn = 32,
@@ -48,9 +50,11 @@ constexpr camera_config_t esp32cam_aithinker_settings = {
     .ledc_timer = LEDC_TIMER_1,
     .ledc_channel = LEDC_CHANNEL_1,
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size = FRAMESIZE_QVGA,
-    .jpeg_quality = 25,
-    .fb_count = 1};
+    .frame_size = FRAMESIZE_VGA,
+    .jpeg_quality = 20,
+    .fb_count = 1,
+    .fb_location = CAMERA_FB_IN_PSRAM // Use PSRAM for frame buffer
+};
 
 constexpr camera_config_t esp32cam_ttgo_t_settings = {
     .pin_pwdn = 26,
@@ -73,9 +77,11 @@ constexpr camera_config_t esp32cam_ttgo_t_settings = {
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size = FRAMESIZE_QVGA,
-    .jpeg_quality = 25,
-    .fb_count = 1};
+    .frame_size = FRAMESIZE_VGA,
+    .jpeg_quality = 20,
+    .fb_count = 1,
+    .fb_location = CAMERA_FB_IN_PSRAM // Use PSRAM for frame buffer
+};
 
 constexpr camera_config_t esp32cam_m5stack_settings = {
     .pin_pwdn = -1,
@@ -98,9 +104,11 @@ constexpr camera_config_t esp32cam_m5stack_settings = {
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size = FRAMESIZE_QVGA,
-    .jpeg_quality = 25,
-    .fb_count = 1};
+    .frame_size = FRAMESIZE_VGA,
+    .jpeg_quality = 20,
+    .fb_count = 1,
+    .fb_location = CAMERA_FB_IN_PSRAM // Use PSRAM for frame buffer
+};
 
 constexpr camera_config_t esp32cam_wrover_kit_settings = {
     .pin_pwdn = -1,
@@ -123,6 +131,8 @@ constexpr camera_config_t esp32cam_wrover_kit_settings = {
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size = FRAMESIZE_QVGA,
-    .jpeg_quality = 25,
-    .fb_count = 1};
+    .frame_size = FRAMESIZE_VGA,
+    .jpeg_quality = 20,
+    .fb_count = 1,
+    .fb_location = CAMERA_FB_IN_PSRAM // Use PSRAM for frame buffer
+};

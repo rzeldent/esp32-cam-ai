@@ -28,12 +28,12 @@
 #define STR(x) STR_HELPER(x)
 
 // WiFi reconnection settings
-const unsigned long WIFI_REBOOT_DELAY = 60000; // 60 seconds
+const unsigned long WIFI_REBOOT_DELAY = 60000;       // 60 seconds
 const unsigned long WIFI_RECONNECT_INTERVAL = 30000; // 30 seconds
 const unsigned long WIFI_CHECK_INTERVAL = 5000;      // 5 seconds
 const int MAX_RECONNECT_ATTEMPTS = 5;
 
-const unsigned long WATCHDOG_TIMEOUT = 10000; // 10 seconds
+const unsigned long WATCHDOG_TIMEOUT = 30000; // 30 seconds
 
 // WiFi status tracking
 unsigned long lastWiFiCheck = 0;
@@ -432,7 +432,7 @@ void handleRoot()
 
   auto response = mcp_response.get_http_response();
   // Http Code, Content-Type, and Body
-  log_i("Sending response: %d %s %s", std::get<0>(response), std::get<1>(response), std::get<2>(response).c_str());
+  log_d("Sending response: %d %s %s", std::get<0>(response), std::get<1>(response), std::get<2>(response).c_str());
   server.send(std::get<0>(response), std::get<1>(response), std::get<2>(response));
 }
 
@@ -442,22 +442,22 @@ void onWiFiEvent(WiFiEvent_t event)
   switch (event)
   {
   case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-    log_i("WiFi connected to SSID: %s", WiFi.SSID().c_str());
+    log_d("WiFi connected to SSID: %s", WiFi.SSID().c_str());
     break;
 
   case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-    log_i("WiFi got IP address: %s", WiFi.localIP().toString().c_str());
+    log_d("WiFi got IP address: %s", WiFi.localIP().toString().c_str());
     wifiConnected = true;
     reconnectAttempts = 0;
     break;
 
   case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-    log_w("WiFi disconnected!");
+    log_d("WiFi disconnected!");
     wifiConnected = false;
     break;
 
   case ARDUINO_EVENT_WIFI_STA_LOST_IP:
-    log_w("WiFi lost IP address");
+    log_d("WiFi lost IP address");
     wifiConnected = false;
     break;
   }
@@ -465,7 +465,7 @@ void onWiFiEvent(WiFiEvent_t event)
 
 void setup()
 {
-    // Disable brownout
+  // Disable brownout
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
   Serial.begin(115200);
@@ -480,8 +480,8 @@ void setup()
   pinMode(FLASH_GPIO, OUTPUT);
   digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
 
-  log_i("CPU Freq: %d Mhz", getCpuFrequencyMhz());
-  log_i("Free heap: %d bytes", ESP.getFreeHeap());
+  log_d("CPU Freq: %d Mhz", getCpuFrequencyMhz());
+  log_d("Free heap: %d bytes", ESP.getFreeHeap());
 
   // Setup WiFi event handlers
   WiFi.onEvent(onWiFiEvent);
@@ -490,7 +490,7 @@ void setup()
   WiFi.setAutoReconnect(false); // We handle reconnection manually
   WiFi.persistent(true);        // Save WiFi config to flash
 
-  log_i("WiFi.begin() with SSID: %s", STR(WIFI_SSID));
+  log_d("WiFi.begin() with SSID: %s", STR(WIFI_SSID));
   WiFi.begin(STR(WIFI_SSID), STR(WIFI_PASSWORD));
   auto connection_result = WiFi.waitForConnectResult();
   if (connection_result != WL_CONNECTED)
@@ -501,7 +501,7 @@ void setup()
 
   wifiConnected = true; // Set initial status
   log_i("Local IP address: %s", WiFi.localIP().toString().c_str());
-  log_i("Signal strength: %d dBm", WiFi.RSSI());
+  log_d("Signal strength: %d dBm", WiFi.RSSI());
 
   auto hostName = "esp32-" + WiFi.macAddress() + ".local";
   hostName.replace(":", "");
@@ -518,7 +518,9 @@ void setup()
 
   // Initialize camera
   camera_init_result = esp_camera_init(&esp32cam_aithinker_settings);
-  if (camera_init_result != ESP_OK)
+  if (camera_init_result == ESP_OK)
+    log_i("Camera initialized successfully");
+  else
     log_e("Camera init failed with error 0x%x", camera_init_result);
 
   server.on("/", HTTP_ANY, handleRoot);
