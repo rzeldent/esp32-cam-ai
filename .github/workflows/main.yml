@@ -32,6 +32,17 @@ jobs:
       - name: Build firmware -e ${{ matrix.environment }}
         run: platformio run -e ${{ matrix.environment }}
 
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts/${{ matrix.environment }}
+          cp .pio/build/${{ matrix.environment }}/firmware.bin artifacts/${{ matrix.environment }}/
+          
+          # Generate build info
+          echo "Build Date: $(date)" > artifacts/${{ matrix.environment }}/build-info.txt
+          echo "Environment: ${{ matrix.environment }}" >> artifacts/${{ matrix.environment }}/build-info.txt
+          echo "Commit: ${{ github.sha }}" >> artifacts/${{ matrix.environment }}/build-info.txt
+          echo "Ref: ${{ github.ref }}" >> artifacts/${{ matrix.environment }}/build-info.txt
+
       - name: Upload firmwares
         uses: actions/upload-artifact@v4
         with:
