@@ -10,8 +10,7 @@
 
 This project transforms an ESP32-CAM into a remotely controllable MCP server that can capture images, control LEDs, manage flash lighting, and provide system diagnostics. The server exposes these capabilities through the Model Context Protocol, making it easy to integrate with AI assistants and automation systems.
 
-Brief: **Use Copilot or other AI digital assistants, like home assistant or Node-Red, to use your ESP32-CAM, getting information (camera, wifi- or system state) or set GPIO's (led, flash)**
-
+Brief: **Use Copilot or other AI digital assistants, like AI-Toolkit (in VSCode), Home Assistant (HA) or Node-Red, to use your ESP32-CAM, getting information (camera, wifi- or system state) or set GPIO's (led, flash)**
 
 ## Features
 
@@ -331,6 +330,7 @@ The MCP server can be integrated with AI assistants that support the Model Conte
 
 ### Automation Integration
 
+- **AI-Toolkit in VSCode**: Create prompts and use custom MCP's. [https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio)
 - **Home Assistant**: Create automations triggered by camera captures
 - **Node-RED**: Build visual workflows with camera and LED control
 - **Custom Applications**: Integrate via standard HTTP requests
