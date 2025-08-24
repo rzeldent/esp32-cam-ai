@@ -77,18 +77,17 @@ static bool deflate_compress(const String &input, String &output)
   auto src = reinterpret_cast<const unsigned char *>(input.c_str());
   auto src_len = static_cast<mz_ulong>(input.length());
   auto bound = mz_compressBound(src_len);
-  auto buf = static_cast<unsigned char *>(malloc(bound));
+  std::unique_ptr<unsigned char, decltype(&free)> buf(
+      static_cast<unsigned char *>(malloc(bound)), &free);
   if (!buf)
     return false;
   auto out_len = bound;
-  auto st = mz_compress2(buf, &out_len, src, src_len, MZ_DEFAULT_LEVEL);
+  auto st = mz_compress2(buf.get(), &out_len, src, src_len, MZ_DEFAULT_LEVEL);
   if (st != MZ_OK)
   {
-    free(buf);
     return false;
   }
-  output = String(reinterpret_cast<const char *>(buf), static_cast<unsigned int>(out_len));
-  free(buf);
+  output = String(reinterpret_cast<const char *>(buf.get()), static_cast<unsigned int>(out_len));
   return true;
 }
 #endif
