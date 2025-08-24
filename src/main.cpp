@@ -313,13 +313,13 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   auto fb  = esp_camera_fb_get();
   if (fb)
     esp_camera_fb_return(fb);
+
   fb = esp_camera_fb_get();
   if (fb)
     esp_camera_fb_return(fb);
 
   // Take the actual frame
   fb = esp_camera_fb_get();
-
   // Turn flash off immediately after capture attempt
   digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
 
