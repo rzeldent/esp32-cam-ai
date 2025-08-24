@@ -12,6 +12,11 @@
 
 #include "camera_config.h"
 
+#ifdef ENABLE_GZIP
+// miniz is a small public-domain zlib/gzip alternative commonly available with ESP32 Arduino
+#include <miniz.h>
+#endif
+
 #ifndef WIFI_SSID
 #error "WIFI_SSID is not defined. Please define it in your environment variables or in the code."
 #endif
@@ -28,12 +33,12 @@
 #define STR(x) STR_HELPER(x)
 
 // WiFi reconnection settings
-const unsigned long WIFI_REBOOT_DELAY = 60000;       // 60 seconds
-const unsigned long WIFI_RECONNECT_INTERVAL = 30000; // 30 seconds
-const unsigned long WIFI_CHECK_INTERVAL = 5000;      // 5 seconds
-const int MAX_RECONNECT_ATTEMPTS = 5;
+constexpr auto WIFI_REBOOT_DELAY = 60000UL;       // 60 seconds
+constexpr auto WIFI_RECONNECT_INTERVAL = 30000UL; // 30 seconds
+constexpr auto WIFI_CHECK_INTERVAL = 5000UL;      // 5 seconds
+constexpr auto MAX_RECONNECT_ATTEMPTS = 5;
 
-const unsigned long WATCHDOG_TIMEOUT = 30000; // 30 seconds
+constexpr auto WATCHDOG_TIMEOUT = 30000UL; // 30 seconds
 
 // WiFi status tracking
 unsigned long lastWiFiCheck = 0;
@@ -55,6 +60,39 @@ extern "C"
 
 WebServer server(80);
 
+// Generic Accept-Encoding check
+static bool client_accepts(const char *encoding)
+{
+  if (!server.hasHeader("Accept-Encoding"))
+    return false;
+  auto accept = server.header("Accept-Encoding");
+  accept.toLowerCase();
+  return accept.indexOf(encoding) >= 0;
+}
+
+#ifdef ENABLE_GZIP
+// Optional deflate (zlib) compression using miniz. Returns true on success and writes binary data to output.
+static bool deflate_compress(const String &input, String &output)
+{
+  auto src = reinterpret_cast<const unsigned char *>(input.c_str());
+  auto src_len = static_cast<mz_ulong>(input.length());
+  auto bound = mz_compressBound(src_len);
+  auto buf = static_cast<unsigned char *>(malloc(bound));
+  if (!buf)
+    return false;
+  auto out_len = bound;
+  auto st = mz_compress2(buf, &out_len, src, src_len, MZ_DEFAULT_LEVEL);
+  if (st != MZ_OK)
+  {
+    free(buf);
+    return false;
+  }
+  output = String(reinterpret_cast<const char *>(buf), static_cast<unsigned int>(out_len));
+  free(buf);
+  return true;
+}
+#endif
+
 void handle_initialize(mcp_response &response)
 {
   auto result = response.create_result();
@@ -64,7 +102,7 @@ void handle_initialize(mcp_response &response)
   tools["listChanged"] = false;
   auto server_info = result["serverInfo"].to<JsonObject>();
   server_info["name"] = "ESP32-CAM-AI MCP Server";
-  server_info["version"] = "1.0.0";
+  server_info["version"] = "1.0.1";
 }
 
 void handle_notifications_initialized(mcp_response &response)
@@ -104,7 +142,7 @@ void handle_tools_list(mcp_response &response)
   auto flash_tool_input_schema = flash_tool["inputSchema"].to<JsonObject>();
   flash_tool_input_schema["type"] = "object";
   auto flash_tool_input_schema_properties = flash_tool_input_schema["properties"].to<JsonObject>();
-  auto flash_tool_input_schema_properties_duration = led_tool_input_schema_properties["duration"].to<JsonObject>();
+  auto flash_tool_input_schema_properties_duration = flash_tool_input_schema_properties["duration"].to<JsonObject>();
   flash_tool_input_schema_properties_duration["description"] = "Flash duration in milliseconds";
   flash_tool_input_schema_properties_duration["type"] = "number";
   flash_tool_input_schema_properties_duration["minimum"] = 5;
@@ -153,7 +191,7 @@ void checkWiFiConnection()
   if (now - lastWiFiCheck >= WIFI_CHECK_INTERVAL)
   {
     lastWiFiCheck = now;
-    bool currentStatus = WiFi.status() == WL_CONNECTED;
+    auto currentStatus = WiFi.status() == WL_CONNECTED;
     // Status changed
     if (currentStatus != wifiConnected)
     {
@@ -272,13 +310,18 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     delay(20); // Allow flash to stabilize
   }
 
-  // Discard previous frames to ensure we get a fresh capture
-  auto fb = esp_camera_fb_get();
-  esp_camera_fb_return(fb);
-
+  // Discard 1-2 warm-up frames to ensure a fresh capture
+  auto fb  = esp_camera_fb_get();
+  if (fb)
+    esp_camera_fb_return(fb);
   fb = esp_camera_fb_get();
-  esp_camera_fb_return(fb);
+  if (fb)
+    esp_camera_fb_return(fb);
 
+  // Take the actual frame
+  fb = esp_camera_fb_get();
+
+  // Turn flash off immediately after capture attempt
   digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
 
   if (!fb)
@@ -311,7 +354,7 @@ void tool_wifi_status(mcp_response &response)
   auto result_content_item = result_content.add<JsonObject>();
   result_content_item["type"] = "text";
 
-  String status_text;
+  auto status_text = String();
   status_text += "IP Address: " + WiFi.localIP().toString() + "\n";
   status_text += "Signal Strength: " + String(WiFi.RSSI()) + " dBm\n";
   status_text += "MAC Address: " + WiFi.macAddress() + "\n";
@@ -329,7 +372,7 @@ void tool_system_status(mcp_response &response)
 
   // Get the tem
 
-  String status_text = "System Status:\n";
+  auto status_text = String("System Status:\n");
   status_text += "Uptime: " + String(millis() / 1000) + " seconds\n";
   status_text += "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n";
   status_text += "Min Free Heap: " + String(ESP.getMinFreeHeap()) + " bytes\n";
@@ -387,6 +430,8 @@ void handleRoot()
   server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   server.sendHeader("Access-Control-Max-Age", "86400");
+  // Content negotiation for caches and proxies
+  server.sendHeader("Vary", "Accept-Encoding");
 
   if (server.method() == HTTP_OPTIONS)
   {
@@ -411,7 +456,12 @@ void handleRoot()
     if (mcp_request.method() == "initialize")
       handle_initialize(mcp_response);
     else if (mcp_request.method() == "notifications/initialized")
-      handle_notifications_initialized(mcp_response);
+    {
+      // JSON-RPC notification: do not return a JSON-RPC response body
+      log_d("Notifications/initialized received; returning 204 No Content");
+      server.send(204, "text/plain", "");
+      return;
+    }
     else if (mcp_request.method() == "tools/list")
       handle_tools_list(mcp_response);
     else if (mcp_request.method() == "tools/call")
@@ -432,8 +482,28 @@ void handleRoot()
 
   auto response = mcp_response.get_http_response();
   // Http Code, Content-Type, and Body
-  log_d("Sending response: %d %s %s", std::get<0>(response), std::get<1>(response), std::get<2>(response).c_str());
-  server.send(std::get<0>(response), std::get<1>(response), std::get<2>(response));
+  auto http_code = std::get<0>(response);
+  auto content_type = std::get<1>(response);
+  auto body = std::get<2>(response);
+
+#ifdef ENABLE_GZIP
+  // Try deflate if the client accepts it; fall back to plain text on any failure
+  if (client_accepts("deflate"))
+  {
+    String deflated;
+    if (deflate_compress(body, deflated))
+    {
+      server.sendHeader("Content-Encoding", "deflate");
+      log_d("Sending deflate response: %d %s len=%u (deflate)", http_code, content_type, (unsigned)deflated.length());
+      server.send(http_code, content_type, deflated);
+      return;
+    }
+  }
+#endif  
+
+  // Deflate not enabled or failed, fall back to plain text
+  log_d("Sending response: %d %s len=%u", http_code, content_type, (unsigned)body.length());
+  server.send(http_code, content_type, body);
 }
 
 // WiFi event handlers
