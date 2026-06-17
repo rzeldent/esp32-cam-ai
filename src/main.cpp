@@ -4,6 +4,7 @@
 #include <WebServer.h>
 #include <ArduinoOTA.h>
 #include <esp_camera.h>
+#include <esp_system.h>
 #include <esp_task_wdt.h>
 #include <soc/rtc_cntl_reg.h>
 
