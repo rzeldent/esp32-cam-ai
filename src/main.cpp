@@ -540,7 +540,12 @@ void setup()
   Serial.begin(115200);
 
   // Initialize watchdog timer
-  esp_task_wdt_init(WATCHDOG_TIMEOUT / 1000, true);
+  esp_task_wdt_config_t wdt_config = {
+      .timeout_ms = WATCHDOG_TIMEOUT,
+      .idle_core_mask = 0,
+      .trigger_panic = true
+  };
+  esp_task_wdt_init(&wdt_config);
   esp_task_wdt_add(NULL);
 
   // Initialize LED GPIOs
