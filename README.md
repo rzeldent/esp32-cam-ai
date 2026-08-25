@@ -345,43 +345,56 @@ The MCP server can be integrated with AI assistants that support the Model Conte
 
 ### Core Components
 
-```plaintext
-┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
-│    MCP Protocol   │────│   Tool Handlers   │────│   Hardware Layer  │
-│                   │    │                   │    │                   │
-│ • Initialization  │    │ • LED Control     │    │ • Camera (OV2640) │
-│ • Tools List      │    │ • Flash Control   │    │ • GPIO Control    │
-│ • Tools Call      │    │ • Capture         │    │ • WiFi Module     │
-│ • Notifications   │    │ • Status Check    │    │ • Flash Storage   │
-└───────────────────┘    └───────────────────┘    └───────────────────┘
-  │                          │                      │
-  └──────────────────────────┼──────────────────────┘
-              │
-          ┌───────────────────┐
-          │    Web Server     │
-          │                   │
-          │ • HTTP Endpoint   │
-          │ • JSON Parsing    │
-          │ • Error Handling  │
-          │ • Response Gen.   │
-          └───────────────────┘
+```mermaid
+flowchart LR
+    subgraph MCP["MCP Protocol"]
+        M1[Initialization]
+        M2[Tools List]
+        M3[Tools Call]
+        M4[Notifications]
+    end
+
+    subgraph TOOLS["Tool Handlers"]
+        T1[LED Control]
+        T2[Flash Control]
+        T3[Capture]
+        T4[Status Check]
+    end
+
+    subgraph HW["Hardware Layer"]
+        H1[Camera OV2640]
+        H2[GPIO Control]
+        H3[WiFi Module]
+        H4[Flash Storage]
+    end
+
+    subgraph WEB["Web Server"]
+        W1[HTTP Endpoint]
+        W2[JSON Parsing]
+        W3[Error Handling]
+        W4[Response Gen.]
+    end
+
+    MCP --> TOOLS --> HW
+    MCP & TOOLS & HW --> WEB
 ```
 
 ### Code Structure
 
-```plaintext
-esp32-cam-ai/
-├── src/
-│   └── main.cpp              # Main application code
-├── include/
-│   └── camera_config.h       # Camera configurations
-├── lib/
-│   └── mcp/                  # MCP protocol implementation
-│       ├── mcp.h
-│       └── mcp.cpp
-├── .vscode/
-│   └── mcp.json             # MCP client configuration
-└── platformio.ini           # Build configuration
+```mermaid
+graph TD
+    ROOT["esp32-cam-ai/"]
+    ROOT --> SRC["src/"]
+    SRC --> MAIN["main.cpp<br/><i>Main application code</i>"]
+    ROOT --> INC["include/"]
+    INC --> CAM["camera_config.h<br/><i>Camera configurations</i>"]
+    ROOT --> LIB["lib/"]
+    LIB --> MCP["mcp/ - MCP protocol implementation"]
+    MCP --> MCPH["mcp.h"]
+    MCP --> MCPC["mcp.cpp"]
+    ROOT --> VSCODE[".vscode/"]
+    VSCODE --> MCPJSON["mcp.json - MCP client configuration"]
+    ROOT --> PIO["platformio.ini - Build configuration"]
 ```
 
 ## Reliability Features

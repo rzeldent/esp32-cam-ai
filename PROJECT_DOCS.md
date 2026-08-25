@@ -2,22 +2,23 @@
 
 ## Project Structure
 
-```plaintext
-ESP32-CAM-AI/
-├── src/
-│   └── main.cpp                 # Main MCP server implementation
-├── include/
-│   └── camera_config.h          # Camera hardware configurations  
-├── lib/
-│   └── mcp/                     # MCP protocol library
-│       ├── mcp.h                # MCP class definitions
-│       └── mcp.cpp              # MCP implementation
-├── .vscode/
-│   └── mcp.json                 # MCP client configuration
-├── platformio.ini               # Build configuration
-├── README.md                    # Comprehensive documentation
-├── QUICK_REFERENCE.md          # Quick reference guide
-└── PROJECT_DOCS.md             # This file
+```mermaid
+graph TD
+    ROOT["ESP32-CAM-AI/"]
+    ROOT --> SRC["src/"]
+    SRC --> MAIN["main.cpp<br/><i>Main MCP server implementation</i>"]
+    ROOT --> INC["include/"]
+    INC --> CAM["camera_config.h<br/><i>Camera hardware configurations</i>"]
+    ROOT --> LIB["lib/"]
+    LIB --> MCP["mcp/ - MCP protocol library"]
+    MCP --> MCPH["mcp.h<br/><i>MCP class definitions</i>"]
+    MCP --> MCPC["mcp.cpp<br/><i>MCP implementation</i>"]
+    ROOT --> VSCODE[".vscode/"]
+    VSCODE --> MCPJSON["mcp.json<br/><i>MCP client configuration</i>"]
+    ROOT --> PIO["platformio.ini - Build configuration"]
+    ROOT --> README["README.md - Comprehensive documentation"]
+    ROOT --> QUICK["QUICK_REFERENCE.md - Quick reference guide"]
+    ROOT --> DOCS["PROJECT_DOCS.md - This file"]
 ```
 
 ## Project Overview

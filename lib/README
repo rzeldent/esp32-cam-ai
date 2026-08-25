@@ -7,25 +7,25 @@ The source code of each library should be placed in a separate directory
 
 For example, see the structure of the following example libraries `Foo` and `Bar`:
 
-|--lib
-|  |
-|  |--Bar
-|  |  |--docs
-|  |  |--examples
-|  |  |--src
-|  |     |- Bar.c
-|  |     |- Bar.h
-|  |  |- library.json (optional. for custom build options, etc) https://docs.platformio.org/page/librarymanager/config.html
-|  |
-|  |--Foo
-|  |  |- Foo.c
-|  |  |- Foo.h
-|  |
-|  |- README --> THIS FILE
-|
-|- platformio.ini
-|--src
-   |- main.c
+```mermaid
+graph TD
+    ROOT["/"]
+    ROOT --> LIB["lib/"]
+    LIB --> BAR["Bar/"]
+    BAR --> BAR_DOCS["docs"]
+    BAR --> BAR_EX["examples"]
+    BAR --> BAR_SRC["src"]
+    BAR_SRC --> BAR_C["Bar.c"]
+    BAR_SRC --> BAR_H["Bar.h"]
+    BAR --> BAR_JSON["library.json"]
+    LIB --> FOO["Foo/"]
+    FOO --> FOO_C["Foo.c"]
+    FOO --> FOO_H["Foo.h"]
+    LIB --> LIB_README["README (this file)"]
+    ROOT --> PIO["platformio.ini"]
+    ROOT --> SRC["src/"]
+    SRC --> MAIN["main.c"]
+```
 
 Example contents of `src/main.c` using Foo and Bar:
 ```
