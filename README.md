@@ -2,7 +2,13 @@
 
 *Transform your ESP32-CAM into a powerful, remotely controllable AI-enabled camera system!*
 
-[![Platform IO CI](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml/badge.svg)](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml)
+[![PlatformIO CI](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml/badge.svg)](https://github.com/rzeldent/esp32-cam-ai/actions/workflows/main.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform: ESP32-CAM](https://img.shields.io/badge/Platform-ESP32--CAM-blue)](https://www.espressif.com/)
+[![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-00979D)](https://www.arduino.cc/)
+[![Language: C++](https://img.shields.io/badge/Language-C%2B%2B-00599C)](https://isocpp.org/)
+[![MCP: 2024-11-05](https://img.shields.io/badge/MCP-2024--11--05-blueviolet)](https://modelcontextprotocol.io/)
+[![Release](https://img.shields.io/github/v/release/rzeldent/esp32-cam-ai)](https://github.com/rzeldent/esp32-cam-ai/releases)
 
 [<img src="assets/images/esp32-cam-ai.png" alt="ESP32-CAM-AI" width="320">](assets/images/esp32-cam-ai.png)
 
