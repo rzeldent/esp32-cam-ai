@@ -4,7 +4,6 @@
 #include <WebServer.h>
 #include <ArduinoOTA.h>
 #include <esp_camera.h>
-#include <esp_task_wdt.h>
 #include <soc/rtc_cntl_reg.h>
 
 #include <mcp.h>
@@ -539,11 +538,7 @@ void setup()
 
   Serial.begin(115200);
 
-  // Initialize watchdog timer
-  esp_task_wdt_init(WATCHDOG_TIMEOUT / 1000, true);
-  esp_task_wdt_add(NULL);
-
-  // Initialize LED GPIOs
+    // Initialize LED GPIOs
   pinMode(LED_GPIO, OUTPUT);
   digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
   pinMode(FLASH_GPIO, OUTPUT);
@@ -598,9 +593,6 @@ void setup()
 
 void loop()
 {
-  // Reset watchdog timer
-  esp_task_wdt_reset();
-
   // Check WiFi connection status and handle reconnection first
   checkWiFiConnection();
 
