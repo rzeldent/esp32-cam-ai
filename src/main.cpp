@@ -5,14 +5,17 @@
 #include <ArduinoOTA.h>
 #include <esp_camera.h>
 #include <soc/rtc_cntl_reg.h>
+#include <map>
+#include <string>
 
 #include <mcp.h>
-#include <base64.h>
 #include <libb64/cdecode.h>
 
 #include "camera_config.h"
 #include "settings.h"
-#include "tool_schema.h"
+#include "mcp_schema_tool.h"
+#include "mcp_schema_response.h"
+#include "mcp_schema_error.h"
 
 #ifdef ENABLE_GZIP
 // miniz is a small public-domain zlib/gzip alternative commonly available with ESP32 Arduino
@@ -33,6 +36,61 @@
 
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
+
+static const std::map<std::string, framesize_t> frame_sizes = {
+    {"QQVGA (160x120)", FRAMESIZE_QQVGA},
+    {"QCIF (176x144)", FRAMESIZE_QCIF},
+    {"HQVGA (240x176)", FRAMESIZE_HQVGA},
+    {"240x240", FRAMESIZE_240X240},
+    {"QVGA (320x240)", FRAMESIZE_QVGA},
+    {"CIF (400x296)", FRAMESIZE_CIF},
+    {"HVGA (480x320)", FRAMESIZE_HVGA},
+    {"VGA (640x480)", FRAMESIZE_VGA},
+    {"SVGA (800x600)", FRAMESIZE_SVGA},
+    {"XGA (1024x768)", FRAMESIZE_XGA},
+    {"HD (1280x720)", FRAMESIZE_HD},
+    {"SXGA (1280x1024)", FRAMESIZE_SXGA},
+    {"UXGA (1600x1200)", FRAMESIZE_UXGA}};
+
+static const std::map<std::string, pixformat_t> pixel_formats = {
+    {"RGB565", PIXFORMAT_RGB565},
+    {"YUV422", PIXFORMAT_YUV422},
+    {"YUV420", PIXFORMAT_YUV420},
+    {"Grayscale", PIXFORMAT_GRAYSCALE},
+    {"JPEG", PIXFORMAT_JPEG},
+    {"RGB888", PIXFORMAT_RGB888},
+    {"RAW", PIXFORMAT_RAW},
+    {"RGB444", PIXFORMAT_RGB444},
+    {"RGB555", PIXFORMAT_RGB555}};
+
+static const std::map<std::string, int> camera_wb_modes = {
+    {"Auto", 0},
+    {"Sunny", 1},
+    {"Cloudy", 2},
+    {"Office", 3},
+    {"Home", 4}};
+
+// Minimal base64 encoder (RFC 4648), used to carry the SRTP master key and salt in the "a=crypto" attribute.
+std::string base64_encode(const uint8_t *data, size_t len)
+{
+    static const char table_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((len + 2) / 3) * 4);
+    for (size_t i = 0; i < len; i += 3)
+    {
+        auto n = (uint32_t)data[i] << 16;
+        if (i + 1 < len)
+            n |= (uint32_t)data[i + 1] << 8;
+        if (i + 2 < len)
+            n |= data[i + 2];
+
+        out += table_b64[(n >> 18) & 0x3f];
+        out += table_b64[(n >> 12) & 0x3f];
+        out += (i + 1 < len) ? table_b64[(n >> 6) & 0x3f] : '=';
+        out += (i + 2 < len) ? table_b64[n & 0x3f] : '=';
+    }
+    return out;
+}
 
 // Temperature export (funny; has a typo!)
 #ifdef __cplusplus
@@ -109,14 +167,12 @@ static bool deflate_compress(const String &input, String &output)
 
 void handle_initialize(mcp_response &response)
 {
-  auto result = response.create_result();
+  mcp_response_schema r(response);
+  auto result = r.result_object();
   result["protocolVersion"] = MCP_PROTOCOL_VERSION;
-  auto capabilities = result["capabilities"].to<JsonObject>();
-  auto tools = capabilities["tools"].to<JsonObject>();
-  tools["listChanged"] = false;
-  auto server_info = result["serverInfo"].to<JsonObject>();
-  server_info["name"] = MCP_NAME;
-  server_info["version"] = MCP_VERSION;
+  result["capabilities"]["tools"]["listChanged"] = false;
+  result["serverInfo"]["name"] = MCP_NAME;
+  result["serverInfo"]["version"] = MCP_VERSION;
 }
 
 void handle_notifications_initialized(mcp_response &response)
@@ -125,122 +181,6 @@ void handle_notifications_initialized(mcp_response &response)
   // Set empty result to indicate successful notification processing
   auto result = response.create_result();
   result["acknowledged"] = true;
-}
-
-// pixformat_t and the PIXFORMAT_* values are provided by esp_camera.h (sensor.h);
-// see the pixel_formats lookup table below.
-
-typedef struct frame_size_entry
-{
-    const char name[17];
-    const framesize_t frame_size;
-} frame_size_entry_t;
-
-constexpr const frame_size_entry_t frame_sizes[] = {
-    {"QQVGA (160x120)", FRAMESIZE_QQVGA},
-    {"QCIF (176x144)", FRAMESIZE_QCIF},
-    {"HQVGA (240x176)", FRAMESIZE_HQVGA},
-    {"240x240", FRAMESIZE_240X240},
-    {"QVGA (320x240)", FRAMESIZE_QVGA},
-    {"CIF (400x296)", FRAMESIZE_CIF},
-    {"HVGA (480x320)", FRAMESIZE_HVGA},
-    {"VGA (640x480)", FRAMESIZE_VGA},
-    {"SVGA (800x600)", FRAMESIZE_SVGA},
-    {"XGA (1024x768)", FRAMESIZE_XGA},
-    {"HD (1280x720)", FRAMESIZE_HD},
-    {"SXGA (1280x1024)", FRAMESIZE_SXGA},
-    {"UXGA (1600x1200)", FRAMESIZE_UXGA}};
-
-const framesize_t lookup_frame_size(const char *pin)
-{
-    // Lookup table for the frame name to framesize_t
-    for (const auto &entry : frame_sizes)
-        if (strncmp(entry.name, pin, sizeof(entry.name)) == 0)
-            return entry.frame_size;
-
-    return FRAMESIZE_INVALID;
-}
-
-const char *lookup_frame_size_name(framesize_t size)
-{
-    // Lookup table for framesize_t to a display name
-    for (const auto &entry : frame_sizes)
-        if (entry.frame_size == size)
-            return entry.name;
-
-    return "Unknown";
-}
-
-typedef struct pixel_format_entry
-{
-    const char name[12];
-    const pixformat_t pixel_format;
-} pixel_format_entry_t;
-
-constexpr const pixel_format_entry_t pixel_formats[] = {
-    {"RGB565", PIXFORMAT_RGB565},
-    {"YUV422", PIXFORMAT_YUV422},
-    {"YUV420", PIXFORMAT_YUV420},
-    {"Grayscale", PIXFORMAT_GRAYSCALE},
-    {"JPEG", PIXFORMAT_JPEG},
-    {"RGB888", PIXFORMAT_RGB888},
-    {"RAW", PIXFORMAT_RAW},
-    {"RGB444", PIXFORMAT_RGB444},
-    {"RGB555", PIXFORMAT_RGB555}};
-
-constexpr auto PIXFORMAT_INVALID = static_cast<pixformat_t>(0xff);
-
-const pixformat_t lookup_pixel_format(const char *pin)
-{
-    // Lookup table for the pixel format name to pixformat_t
-    for (const auto &entry : pixel_formats)
-        if (strncmp(entry.name, pin, sizeof(entry.name)) == 0)
-            return entry.pixel_format;
-
-    return PIXFORMAT_INVALID;
-}
-
-const char *lookup_pixel_format_name(pixformat_t fmt)
-{
-    // Lookup table for pixformat_t to a display name
-    for (const auto &entry : pixel_formats)
-        if (entry.pixel_format == fmt)
-            return entry.name;
-
-    return "Unknown";
-}
-
-typedef struct
-{
-    const char name[7];
-    const int value;
-} camera_wb_mode_entry_t;
-
-constexpr const camera_wb_mode_entry_t camera_wb_modes[] = {
-    {"Auto", 0},
-    {"Sunny", 1},
-    {"Cloudy", 2},
-    {"Office", 3},
-    {"Home", 4}};
-
-const int lookup_camera_wb_mode(const char *name)
-{
-    // Lookup table for the white balance name to wb_mode int
-    for (const auto &entry : camera_wb_modes)
-        if (strncmp(entry.name, name, sizeof(entry.name)) == 0)
-            return entry.value;
-
-    return -1; // Not found
-}
-
-const char *lookup_camera_wb_mode_name(int mode)
-{
-    // Lookup table for wb_mode int to a display name
-    for (const auto &entry : camera_wb_modes)
-        if (entry.value == mode)
-            return entry.name;
-
-    return "Unknown";
 }
 
 void handle_tools_list(mcp_response &response)
@@ -260,13 +200,10 @@ void handle_tools_list(mcp_response &response)
   tool_schema camera_tool(tools.add<JsonObject>(), "capture", "Captures a photo from the ESP32-CAM");
   camera_tool
       .boolean("flash", "Use flash when capturing", false)
-      .enum_table("frame_size", "Resolution to use for the captured photo", frame_sizes,
-                  [](const frame_size_entry_t &entry) { return entry.frame_size == MCP_CAPTURE_FRAMESIZE; })
+      .enum_table("frame_size", "Resolution to use for the captured photo", frame_sizes, [](framesize_t size) { return size == MCP_CAPTURE_FRAMESIZE; })
       .number("quality", "JPEG quality for the captured photo (1-100)", 1, 100, MCP_CAPTURE_QUALITY)
-      .enum_table("whitebalance", "White balance mode for the captured photo", camera_wb_modes,
-                  [](const camera_wb_mode_entry_t &entry) { return entry.value == MCP_CAPTURE_WB_MODE; })
-      .enum_table("pixelformat", "Pixel format for the captured photo", pixel_formats,
-                  [](const pixel_format_entry_t &entry) { return entry.pixel_format == MCP_CAPTURE_PIXELFORMAT; });
+      .enum_table("whitebalance", "White balance mode for the captured photo", camera_wb_modes, [](int mode) { return mode == MCP_CAPTURE_WB_MODE; })
+      .enum_table("pixelformat", "Pixel format for the captured photo", pixel_formats, [](pixformat_t fmt) { return fmt == MCP_CAPTURE_PIXELFORMAT; });
 
   // Add WiFi status tool
   tool_schema wifi_tool(tools.add<JsonObject>(), "wifi_status",
@@ -286,23 +223,16 @@ void handle_tools_list(mcp_response &response)
 
 void tool_led(JsonObject arguments, mcp_response &response)
 {
+  mcp_response_schema r(response);
   if (arguments["on"].as<bool>())
   {
     digitalWrite(LED_GPIO, LED_ON_LEVEL);
-    auto result = response.create_result();
-    auto result_content = result["content"].to<JsonArray>();
-    auto result_content_item = result_content.add<JsonObject>();
-    result_content_item["type"] = "text";
-    result_content_item["text"] = "LED turned on";
+    r.text("LED turned on");
   }
   else
   {
     digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW);
-    auto result = response.create_result();
-    auto result_content = result["content"].to<JsonArray>();
-    auto result_content_item = result_content.add<JsonObject>();
-    result_content_item["type"] = "text";
-    result_content_item["text"] = "LED turned off";
+    r.text("LED turned off");
   }
 }
 
@@ -312,36 +242,32 @@ void tool_flash(JsonObject arguments, mcp_response &response)
   digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
   delay(duration); // 5-100ms
   digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
-  auto result = response.create_result();
-  auto result_content = result["content"].to<JsonArray>();
-  auto result_content_item = result_content.add<JsonObject>();
-  result_content_item["type"] = "text";
-  result_content_item["text"] = "Flash executed";
+  mcp_response_schema(response).text("Flash executed");
 }
 
 void tool_capture(JsonObject arguments, mcp_response &response)
 {
   // Resolve the requested capture resolution from the frame_size argument (enum)
-  auto requested_framesize = FRAMESIZE_INVALID;
+  auto capture_framesize = MCP_CAPTURE_FRAMESIZE;
   if (!arguments["frame_size"].isNull())
   {
-    requested_framesize = lookup_frame_size(arguments["frame_size"].as<const char *>());
-    if (requested_framesize == FRAMESIZE_INVALID)
+    auto frame_size_it = frame_sizes.find(arguments["frame_size"].as<const char *>());
+    if (frame_size_it == frame_sizes.end())
     {
-      String valid_options;
+      std::string valid_options;
       for (const auto &entry : frame_sizes)
       {
-        if (!valid_options.isEmpty())
+        if (!valid_options.empty())
           valid_options += ", ";
-        valid_options += entry.name;
+        valid_options += entry.first;
       }
-      auto error = response.create_error();
-      error["code"] = error_code::invalid_params;
-      error["message"] = "Invalid frame_size. Valid options: " + valid_options + ".";
+      mcp_schema_error(response)
+        .code(error_code::invalid_params)
+        .message("Invalid frame_size. Valid options: " + valid_options + ".");
       return;
     }
+    capture_framesize = frame_size_it->second;
   }
-  auto capture_framesize = requested_framesize == FRAMESIZE_INVALID ? MCP_CAPTURE_FRAMESIZE : requested_framesize;
 
   // Resolve the requested JPEG quality (1-100) from the quality argument
   auto capture_quality = MCP_CAPTURE_QUALITY;
@@ -350,9 +276,9 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     auto quality = arguments["quality"].as<int>();
     if (quality < 1 || quality > 100)
     {
-      auto error = response.create_error();
-      error["code"] = error_code::invalid_params;
-      error["message"] = "Invalid quality. Must be between 1 and 100.";
+      mcp_schema_error(response)
+        .code(error_code::invalid_params)
+        .message("Invalid quality. Must be between 1 and 100.");
       return;
     }
     capture_quality = quality;
@@ -362,44 +288,44 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   auto capture_whitebalance = MCP_CAPTURE_WB_MODE;
   if (!arguments["whitebalance"].isNull())
   {
-    auto wb_mode = lookup_camera_wb_mode(arguments["whitebalance"].as<const char *>());
-    if (wb_mode < 0)
+    auto wb_mode_it = camera_wb_modes.find(arguments["whitebalance"].as<const char *>());
+    if (wb_mode_it == camera_wb_modes.end())
     {
-      String valid_options;
+      std::string valid_options;
       for (const auto &entry : camera_wb_modes)
       {
-        if (!valid_options.isEmpty())
+        if (!valid_options.empty())
           valid_options += ", ";
-        valid_options += entry.name;
+        valid_options += entry.first;
       }
-      auto error = response.create_error();
-      error["code"] = error_code::invalid_params;
-      error["message"] = "Invalid whitebalance. Valid options: " + valid_options + ".";
+      mcp_schema_error(response)
+        .code(error_code::invalid_params)
+        .message("Invalid whitebalance. Valid options: " + valid_options + ".");
       return;
     }
-    capture_whitebalance = wb_mode;
+    capture_whitebalance = wb_mode_it->second;
   }
 
   // Resolve the requested pixel format from the pixelformat argument (enum)
   auto capture_pixelformat = MCP_CAPTURE_PIXELFORMAT;
   if (!arguments["pixelformat"].isNull())
   {
-    auto pixel_format = lookup_pixel_format(arguments["pixelformat"].as<const char *>());
-    if (pixel_format == PIXFORMAT_INVALID)
+    auto pixel_format_it = pixel_formats.find(arguments["pixelformat"].as<const char *>());
+    if (pixel_format_it == pixel_formats.end())
     {
-      String valid_options;
+      std::string valid_options;
       for (const auto &entry : pixel_formats)
       {
-        if (!valid_options.isEmpty())
+        if (!valid_options.empty())
           valid_options += ", ";
-        valid_options += entry.name;
+        valid_options += entry.first;
       }
-      auto error = response.create_error();
-      error["code"] = error_code::invalid_params;
-      error["message"] = "Invalid pixelformat. Valid options: " + valid_options + ".";
+      mcp_schema_error(response)
+        .code(error_code::invalid_params)
+        .message("Invalid pixelformat. Valid options: " + valid_options + ".");
       return;
     }
-    capture_pixelformat = pixel_format;
+    capture_pixelformat = pixel_format_it->second;
   }
 
   // Build the camera configuration with the requested parameters and (re)initialize
@@ -411,9 +337,9 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   auto camera_init_result = esp_camera_init(&config);
   if (camera_init_result != ESP_OK)
   {
-    auto error = response.create_error();
-    error["code"] = error_code::internal_error;
-    error["message"] = "Camera initialization failed (0x" + String(camera_init_result, 16) + ")";
+    mcp_schema_error(response)
+        .code(error_code::internal_error)
+        .message("Camera initialization failed (0x" + std::string(String(camera_init_result, 16).c_str()) + ")");
     return;
   }
 
@@ -455,110 +381,107 @@ else
   if (!fb)
   {
     esp_camera_deinit();
-    auto error = response.create_error();
-    error["code"] = error_code::internal_error;
-    error["message"] = "Camera capture failed";
+    mcp_schema_error(response)
+      .code(error_code::internal_error)
+      .message("Camera capture failed");
     return;
   }
 
   auto fb_len = fb->len;
   auto fb_width = fb->width;
   auto fb_height = fb->height;
-  auto base64_image = base64::encode(fb->buf, fb->len);
+  auto base64_image = base64_encode(fb->buf, fb->len);
   esp_camera_fb_return(fb);
   esp_camera_deinit();
   log_d("Capture: JPEG %u bytes -> base64 %u bytes, free heap after: %d", (unsigned)fb_len, (unsigned)base64_image.length(), ESP.getFreeHeap());
 
-  auto result = response.create_result();
-  auto result_content = result["content"].to<JsonArray>();
-  auto result_content_item = result_content.add<JsonObject>();
-  result_content_item["type"] = "text";
-  auto capture_text = String("Image captured successfully. ");
-  capture_text += "Pixel format: " + String(lookup_pixel_format_name(capture_pixelformat)) + ", ";
-  capture_text += "Frame size: " + String(lookup_frame_size_name(capture_framesize)) + ", ";
-  capture_text += "Quality: " + String(capture_quality) + ", ";
-  capture_text += "White balance: " + String(lookup_camera_wb_mode_name(capture_whitebalance)) + ", ";
-  capture_text += "Flash: " + String(arguments["flash"].as<bool>() ? "on" : "off") + ", ";
-  capture_text += "Dimensions: " + String(fb_width) + "x" + String(fb_height) + ", ";
-  capture_text += "Size: " + String(base64_image.length()) + " bytes (base64 encoded)";
-  result_content_item["text"] = capture_text;
+  // Resolve display names for the summary (reverse lookup over the maps)
+  const char *frame_size_name = "Unknown";
+  for (const auto &entry : frame_sizes)
+    if (entry.second == capture_framesize) { frame_size_name = entry.first.c_str(); break; }
+  const char *pixel_format_name = "Unknown";
+  for (const auto &entry : pixel_formats)
+    if (entry.second == capture_pixelformat) { pixel_format_name = entry.first.c_str(); break; }
+  const char *wb_mode_name = "Unknown";
+  for (const auto &entry : camera_wb_modes)
+    if (entry.second == capture_whitebalance) { wb_mode_name = entry.first.c_str(); break; }
 
-  auto structured = result["structuredContent"].to<JsonObject>();
-  structured["image"] = base64_image;
-  structured["format"] = lookup_pixel_format_name(capture_pixelformat);
-  structured["width"] = fb_width;
-  structured["height"] = fb_height;
-  structured["mimeType"] = capture_pixelformat == PIXFORMAT_JPEG ? "image/jpeg" : "image/x-raw";
-  // Free the intermediate base64 String; the JSON document already holds its own copy
-  base64_image = String();
+  // Human-readable text summary
+  std::string text =
+      "Image captured successfully. "
+      "Pixel format: " + std::string(pixel_format_name) + ", "
+      "Frame size: " + std::string(frame_size_name) + ", "
+      "Quality: " + std::to_string(capture_quality) + ", "
+      "White balance: " + std::string(wb_mode_name) + ", "
+      "Flash: " + std::string(arguments["flash"].as<bool>() ? "on" : "off") + ", "
+      "Dimensions: " + std::to_string(fb_width) + "x" + std::to_string(fb_height) + ", "
+      "Size: " + std::to_string(base64_image.length()) + " bytes (base64 encoded)";
+
+  mcp_response_schema r(response);
+  r.text(text)
+      .field("image", base64_image)
+      .field("format", pixel_format_name)
+      .field("width", fb_width)
+      .field("height", fb_height)
+      .field("mimeType", capture_pixelformat == PIXFORMAT_JPEG ? "image/jpeg" : "image/x-raw");
+  // The JSON document already holds its own copy of the image data
+  base64_image.clear();
 }
 
 void tool_wifi_status(mcp_response &response)
 {
-  auto result = response.create_result();
-  auto result_content = result["content"].to<JsonArray>();
-
   // Human-readable text summary
-  auto summary_item = result_content.add<JsonObject>();
-  summary_item["type"] = "text";
-  auto status_text = String();
-  status_text.reserve(256); // Pre-allocate to avoid repeated reallocations
-  status_text += "IP Address: " + WiFi.localIP().toString() + "\n"
-                 "Signal Strength: " + String(WiFi.RSSI()) + " dBm\n"
-                 "MAC Address: " + WiFi.macAddress() + "\n"
-                 "Gateway: " + WiFi.gatewayIP().toString() + "\n"
-                 "DNS: " + WiFi.dnsIP().toString() + "\n";
-  summary_item["text"] = status_text;
+  std::string text =
+      "IP Address: " + std::string(WiFi.localIP().toString().c_str()) + "\n"
+      "Signal Strength: " + std::to_string(WiFi.RSSI()) + " dBm\n"
+      "MAC Address: " + std::string(WiFi.macAddress().c_str()) + "\n"
+      "Gateway: " + std::string(WiFi.gatewayIP().toString().c_str()) + "\n"
+      "DNS: " + std::string(WiFi.dnsIP().toString().c_str()) + "\n";
 
-  // Return the parameters individually as structuredContent (MCP 2025-06-18+)
-  auto structured = result["structuredContent"].to<JsonObject>();
-  structured["ip_address"] = WiFi.localIP().toString();
-  structured["signal_strength_dbm"] = WiFi.RSSI();
-  structured["mac_address"] = WiFi.macAddress();
-  structured["gateway"] = WiFi.gatewayIP().toString();
-  structured["dns"] = WiFi.dnsIP().toString();
+  // Text summary plus the parameters individually as structuredContent (MCP 2025-06-18+)
+  mcp_response_schema r(response);
+  r.text(text)
+      .field("ip_address", WiFi.localIP().toString())
+      .field("signal_strength_dbm", WiFi.RSSI())
+      .field("mac_address", WiFi.macAddress())
+      .field("gateway", WiFi.gatewayIP().toString())
+      .field("dns", WiFi.dnsIP().toString());
 }
 
 void tool_system_status(mcp_response &response)
 {
-  auto result = response.create_result();
-  auto result_content = result["content"].to<JsonArray>();
-
   auto internal_temperature = (temprature_sens_read() - 32) / 1.8;
 
   // Human-readable text summary
-  auto summary_item = result_content.add<JsonObject>();
-  summary_item["type"] = "text";
-  auto status_text = String();
-  status_text.reserve(1024); // Pre-allocate to avoid repeated reallocations
-  status_text += "Uptime: " + String(millis() / 1000) + " seconds\n"
-                 "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n"
-                 "Min Free Heap: " + String(ESP.getMinFreeHeap()) + " bytes\n"
-                 "Max Alloc Heap: " + String(ESP.getMaxAllocHeap()) + " bytes\n"
-                 "CPU Frequency: " + String(getCpuFrequencyMhz()) + " MHz\n"
-                 "Flash Size: " + String(ESP.getFlashChipSize()) + " bytes\n"
-                 "Flash Speed: " + String(ESP.getFlashChipSpeed()) + " Hz\n"
-                 "Sketch Size: " + String(ESP.getSketchSize()) + " bytes\n"
-                 "Free Sketch Space: " + String(ESP.getFreeSketchSpace()) + " bytes\n"
-                 "SDK Version: " + String(ESP.getSdkVersion()) + "\n"
-                 "Reset Reason: " + String(esp_reset_reason()) + "\n"
-                 "Internal Temperature: " + String(internal_temperature, 2) + " °C\n";
-  summary_item["text"] = status_text;
+  std::string text =
+      "Uptime: " + std::to_string(millis() / 1000) + " seconds\n"
+      "Free Heap: " + std::to_string(ESP.getFreeHeap()) + " bytes\n"
+      "Min Free Heap: " + std::to_string(ESP.getMinFreeHeap()) + " bytes\n"
+      "Max Alloc Heap: " + std::to_string(ESP.getMaxAllocHeap()) + " bytes\n"
+      "CPU Frequency: " + std::to_string(getCpuFrequencyMhz()) + " MHz\n"
+      "Flash Size: " + std::to_string(ESP.getFlashChipSize()) + " bytes\n"
+      "Flash Speed: " + std::to_string(ESP.getFlashChipSpeed()) + " Hz\n"
+      "Sketch Size: " + std::to_string(ESP.getSketchSize()) + " bytes\n"
+      "Free Sketch Space: " + std::to_string(ESP.getFreeSketchSpace()) + " bytes\n"
+      "SDK Version: " + std::string(ESP.getSdkVersion()) + "\n"
+      "Reset Reason: " + std::to_string(esp_reset_reason()) + "\n"
+      "Internal Temperature: " + std::string(String(internal_temperature, 2).c_str()) + " °C\n";
 
-  // Return the parameters individually as structuredContent (MCP 2025-06-18+)
-  auto structured = result["structuredContent"].to<JsonObject>();
-  structured["uptime_seconds"] = millis() / 1000;
-  structured["free_heap_bytes"] = ESP.getFreeHeap();
-  structured["min_free_heap_bytes"] = ESP.getMinFreeHeap();
-  structured["max_alloc_heap_bytes"] = ESP.getMaxAllocHeap();
-  structured["cpu_frequency_mhz"] = getCpuFrequencyMhz();
-  structured["flash_size_bytes"] = ESP.getFlashChipSize();
-  structured["flash_speed_hz"] = ESP.getFlashChipSpeed();
-  structured["sketch_size_bytes"] = ESP.getSketchSize();
-  structured["free_sketch_space_bytes"] = ESP.getFreeSketchSpace();
-  structured["sdk_version"] = ESP.getSdkVersion();
-  structured["reset_reason"] = esp_reset_reason();
-  structured["internal_temperature_c"] = internal_temperature;
+  // Text summary plus the parameters individually as structuredContent (MCP 2025-06-18+)
+  mcp_response_schema r(response);
+  r.text(text)
+      .field("uptime_seconds", millis() / 1000)
+      .field("free_heap_bytes", ESP.getFreeHeap())
+      .field("min_free_heap_bytes", ESP.getMinFreeHeap())
+      .field("max_alloc_heap_bytes", ESP.getMaxAllocHeap())
+      .field("cpu_frequency_mhz", getCpuFrequencyMhz())
+      .field("flash_size_bytes", ESP.getFlashChipSize())
+      .field("flash_speed_hz", ESP.getFlashChipSpeed())
+      .field("sketch_size_bytes", ESP.getSketchSize())
+      .field("free_sketch_space_bytes", ESP.getFreeSketchSpace())
+      .field("sdk_version", ESP.getSdkVersion())
+      .field("reset_reason", esp_reset_reason())
+      .field("internal_temperature_c", internal_temperature);
 }
 
 void handle_tools_call(const mcp_request &request, mcp_response &response)
@@ -580,17 +503,14 @@ void handle_tools_call(const mcp_request &request, mcp_response &response)
   else
   {
     // Tool not found, set error
-    auto error = response.create_error();
     if (tool_name.isEmpty())
-    {
-      error["code"] = error_code::invalid_request;
-      error["message"] = "Tool name is required";
-    }
+      mcp_schema_error(response)
+        .code(error_code::invalid_request)
+        .message("Tool name is required");
     else
-    {
-      error["code"] = error_code::method_not_found;
-      error["message"] = "Unknown tool: " + tool_name;
-    }
+      mcp_schema_error(response)
+        .code(error_code::method_not_found)
+        .message(std::string(("Unknown tool: " + tool_name).c_str()));
   }
 }
 
@@ -656,17 +576,15 @@ void handleRoot()
     else if (mcp_request.method() == "tools/call")
       handle_tools_call(mcp_request, mcp_response);
     else
-    {
-      auto error = mcp_response.create_error();
-      error["code"] = error_code::method_not_found;
-      error["message"] = "Method not found: " + mcp_request.method();
-    }
+      mcp_schema_error(mcp_response)
+        .code(error_code::method_not_found)
+        .message(std::string(("Method not found: " + mcp_request.method()).c_str()));
   }
   catch (const mcp_exception &e)
   {
-    auto error = mcp_response.create_error();
-    error["code"] = e.code();
-    error["message"] = e.what();
+    mcp_schema_error(mcp_response)
+      .code(e.code())
+      .message(e.what());
   }
 
   auto response = mcp_response.get_http_response();
@@ -738,8 +656,6 @@ void setup()
   // Allow over the air updates (optionally password-protected)
   ArduinoOTA.setPassword(MCP_OTA_PASSWORD);
   ArduinoOTA.begin();
-
-  // Camera is initialized on demand inside tool_capture with the requested parameters
 
   // Register request headers to collect so hasHeader()/header() work for Accept-Encoding content negotiation
   const char *headerkeys[] = {"Accept-Encoding"};

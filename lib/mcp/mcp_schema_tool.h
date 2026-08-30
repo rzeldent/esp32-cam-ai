@@ -14,9 +14,12 @@
 //     .boolean("flash", "Use flash when capturing", false)
 //     .number("quality", "JPEG quality for the captured photo (1-100)", 1, 100, 20)
 //     .enum_table("frame_size", "Resolution to use for the captured photo", frame_sizes,
-//                 [](const frame_size_entry_t &e) { return e.frame_size == MCP_CAPTURE_FRAMESIZE; });
+//                 [](framesize_t size) { return size == MCP_CAPTURE_FRAMESIZE; });
 
+#include <Arduino.h>
 #include <ArduinoJson.h>
+#include <map>
+#include <string>
 
 class tool_schema
 {
@@ -46,20 +49,20 @@ public:
     }
 
     // Declares a string property whose enum values (and optional default) are derived
-    // from a lookup table of { name, value } entries (e.g. frame_sizes). is_default
-    // receives each entry and returns true for the entry that should be the default.
-    template <typename T, size_t N, typename IsDefault>
-    tool_schema &enum_table(const char *key, const char *description, const T (&table)[N], IsDefault is_default)
+    // from a std::map of { name, value } entries (e.g. frame_sizes). is_default
+    // receives each value and returns true for the entry that should be the default.
+    template <typename T, typename IsDefault>
+    tool_schema &enum_table(const char *key, const char *description, const std::map<std::string, T> &table, IsDefault is_default)
     {
         auto property = properties_[key].to<JsonObject>();
         property["type"] = "string";
         property["description"] = description;
         auto enum_values = property["enum"].to<JsonArray>();
-        for (size_t i = 0; i < N; ++i)
+        for (const auto &entry : table)
         {
-            enum_values.add(table[i].name);
-            if (is_default(table[i]))
-                property["default"] = table[i].name;
+            enum_values.add(entry.first);
+            if (is_default(entry.second))
+                property["default"] = entry.first;
         }
         return *this;
     }
