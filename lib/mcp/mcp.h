@@ -32,22 +32,10 @@ class mcp_request
 public:
     mcp_request(const String &request);
 
-    const String &jsonrpc() const
-    {
-        return jsonrpc_;
-    }
-    const JsonVariant &id() const
-    {
-        return id_;
-    }
-    const String &method() const
-    {
-        return method_;
-    }
-    const JsonObject &params() const
-    {
-        return params_;
-    }
+    const String &jsonrpc() const { return jsonrpc_; }
+    const JsonVariant &id() const { return id_; }
+    const String &method() const { return method_; }
+    const JsonObject &params() const { return params_; }
 
 private:
     JsonDocument doc_;
@@ -65,7 +53,7 @@ struct mcp_response
     JsonObject create_error();
     JsonObject create_result();
 
-    std::tuple<int, const char*, String> get_http_response() const;
+    std::tuple<int, const char *, String> get_http_response() const;
 
 private:
     JsonDocument doc_;

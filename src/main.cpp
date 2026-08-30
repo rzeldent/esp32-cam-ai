@@ -10,6 +10,7 @@
 #include <base64.h>
 
 #include "camera_config.h"
+#include "settings.h"
 
 #ifdef ENABLE_GZIP
 // miniz is a small public-domain zlib/gzip alternative commonly available with ESP32 Arduino
@@ -31,18 +32,9 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
-// WiFi reconnection settings
-constexpr auto WIFI_REBOOT_DELAY = 60000UL;       // 60 seconds
-constexpr auto WIFI_RECONNECT_INTERVAL = 30000UL; // 30 seconds
-constexpr auto WIFI_CHECK_INTERVAL = 5000UL;      // 5 seconds
-constexpr auto MAX_RECONNECT_ATTEMPTS = 5;
-
 constexpr auto WATCHDOG_TIMEOUT = 30000UL; // 30 seconds
 
-// WiFi status tracking
-unsigned long lastWiFiCheck = 0;
-unsigned long lastReconnectAttempt = 0;
-int reconnectAttempts = 0;
+// WiFi connection state, updated by WiFi events
 bool wifiConnected = false;
 
 // Result of camera initialization
@@ -81,12 +73,10 @@ static bool deflate_compress(const String &input, String &output)
   if (!buf)
     return false;
   auto out_len = bound;
-  auto st = mz_compress2(buf.get(), &out_len, src, src_len, MZ_DEFAULT_LEVEL);
-  if (st != MZ_OK)
-  {
+  if (mz_compress2(buf.get(), &out_len, src, src_len, MZ_DEFAULT_LEVEL) != MZ_OK)
     return false;
-  }
-  output = String(reinterpret_cast<const char *>(buf.get()), static_cast<unsigned int>(out_len));
+
+    output = String(reinterpret_cast<const char *>(buf.get()), static_cast<unsigned int>(out_len));
   return true;
 }
 #endif
@@ -94,13 +84,13 @@ static bool deflate_compress(const String &input, String &output)
 void handle_initialize(mcp_response &response)
 {
   auto result = response.create_result();
-  result["protocolVersion"] = "2024-11-05";
+  result["protocolVersion"] = MCP_PROTOCOL_VERSION;
   auto capabilities = result["capabilities"].to<JsonObject>();
   auto tools = capabilities["tools"].to<JsonObject>();
   tools["listChanged"] = false;
   auto server_info = result["serverInfo"].to<JsonObject>();
-  server_info["name"] = "ESP32-CAM-AI MCP Server";
-  server_info["version"] = "1.0.1";
+  server_info["name"] = MCP_NAME;
+  server_info["version"] = MCP_VERSION;
 }
 
 void handle_notifications_initialized(mcp_response &response)
@@ -180,73 +170,6 @@ void handle_tools_list(mcp_response &response)
   system_tool_input_schema["type"] = "object";
   auto system_tool_input_schema_properties = system_tool_input_schema["properties"].to<JsonObject>();
   system_tool_input_schema["additionalProperties"] = false;
-}
-
-void checkWiFiConnection()
-{
-  auto now = millis();
-  // Check WiFi status periodically
-  if (now - lastWiFiCheck >= WIFI_CHECK_INTERVAL)
-  {
-    lastWiFiCheck = now;
-    auto currentStatus = WiFi.status() == WL_CONNECTED;
-    // Status changed
-    if (currentStatus != wifiConnected)
-    {
-      wifiConnected = currentStatus;
-      if (wifiConnected)
-      {
-        log_i("WiFi reconnected! IP: %s", WiFi.localIP().toString().c_str());
-        log_i("Signal strength: %d dBm", WiFi.RSSI());
-        reconnectAttempts = 0; // Reset counter on successful connection
-      }
-      else
-      {
-        log_w("WiFi disconnected!");
-      }
-    }
-
-    // Attempt reconnection if disconnected
-    if (!wifiConnected && (now - lastReconnectAttempt >= WIFI_RECONNECT_INTERVAL))
-    {
-      lastReconnectAttempt = now;
-      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS)
-      {
-        reconnectAttempts++;
-        log_i("WiFi reconnection attempt %d/%d", reconnectAttempts, MAX_RECONNECT_ATTEMPTS);
-
-        WiFi.disconnect();
-        delay(1000);
-        WiFi.begin(STR(WIFI_SSID), STR(WIFI_PASSWORD));
-
-        // Wait for connection with timeout
-        auto connectStart = millis();
-        while (WiFi.status() != WL_CONNECTED && (millis() - connectStart) < 10000)
-          delay(500);
-
-        if (WiFi.status() == WL_CONNECTED)
-        {
-          wifiConnected = true;
-          log_i("WiFi reconnected successfully! IP: %s", WiFi.localIP().toString().c_str());
-          reconnectAttempts = 0;
-        }
-        else
-        {
-          log_w("WiFi reconnection attempt %d failed", reconnectAttempts);
-        }
-      }
-      else
-      {
-        log_e("Max WiFi reconnection attempts reached. Will restart in 60 seconds...");
-        // Reset attempt counter and wait longer before restart
-        if (now - lastReconnectAttempt >= WIFI_REBOOT_DELAY)
-        {
-          log_e("Restarting ESP32 due to WiFi connection failure...");
-          ESP.restart();
-        }
-      }
-    }
-  }
 }
 
 void tool_led(JsonObject arguments, mcp_response &response)
@@ -516,7 +439,6 @@ void onWiFiEvent(WiFiEvent_t event)
   case ARDUINO_EVENT_WIFI_STA_GOT_IP:
     log_d("WiFi got IP address: %s", WiFi.localIP().toString().c_str());
     wifiConnected = true;
-    reconnectAttempts = 0;
     break;
 
   case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -550,9 +472,9 @@ void setup()
   // Setup WiFi event handlers
   WiFi.onEvent(onWiFiEvent);
 
-  // Configure WiFi for better stability
-  WiFi.setAutoReconnect(false); // We handle reconnection manually
-  WiFi.persistent(true);        // Save WiFi config to flash
+  // Configure WiFi for automatic reconnection on disconnect
+  WiFi.setAutoReconnect(true); // Auto-reconnect to the saved AP
+  WiFi.persistent(true);       // Save WiFi config to flash
 
   log_d("WiFi.begin() with SSID: %s", STR(WIFI_SSID));
   WiFi.begin(STR(WIFI_SSID), STR(WIFI_PASSWORD));
@@ -587,15 +509,16 @@ void setup()
   else
     log_e("Camera init failed with error 0x%x", camera_init_result);
 
+  // Register request headers to collect so hasHeader()/header() work for Accept-Encoding content negotiation
+  const char* headerkeys[] = {"Accept-Encoding"};
+  server.collectHeaders(headerkeys, 1);
+
   server.on("/", HTTP_ANY, handleRoot);
   server.begin();
 }
 
 void loop()
 {
-  // Check WiFi connection status and handle reconnection first
-  checkWiFiConnection();
-
   // Handle web server requests only if WiFi is connected
   if (wifiConnected)
     server.handleClient();
