@@ -128,6 +128,9 @@ void handle_notifications_initialized(mcp_response &response)
   result["acknowledged"] = true;
 }
 
+// pixformat_t and the PIXFORMAT_* values are provided by esp_camera.h (sensor.h);
+// see the pixel_formats lookup table below.
+
 typedef struct frame_size_entry
 {
     const char name[17];
@@ -157,6 +160,35 @@ const framesize_t lookup_frame_size(const char *pin)
             return entry.frame_size;
 
     return FRAMESIZE_INVALID;
+}
+
+typedef struct pixel_format_entry
+{
+    const char name[12];
+    const pixformat_t pixel_format;
+} pixel_format_entry_t;
+
+constexpr const pixel_format_entry_t pixel_formats[] = {
+    {"RGB565", PIXFORMAT_RGB565},
+    {"YUV422", PIXFORMAT_YUV422},
+    {"YUV420", PIXFORMAT_YUV420},
+    {"Grayscale", PIXFORMAT_GRAYSCALE},
+    {"JPEG", PIXFORMAT_JPEG},
+    {"RGB888", PIXFORMAT_RGB888},
+    {"RAW", PIXFORMAT_RAW},
+    {"RGB444", PIXFORMAT_RGB444},
+    {"RGB555", PIXFORMAT_RGB555}};
+
+constexpr auto PIXFORMAT_INVALID = static_cast<pixformat_t>(0xff);
+
+const pixformat_t lookup_pixel_format(const char *pin)
+{
+    // Lookup table for the pixel format name to pixformat_t
+    for (const auto &entry : pixel_formats)
+        if (strncmp(entry.name, pin, sizeof(entry.name)) == 0)
+            return entry.pixel_format;
+
+    return PIXFORMAT_INVALID;
 }
 
 typedef struct
@@ -254,9 +286,23 @@ void handle_tools_list(mcp_response &response)
   camera_tool_input_schema_properties_wb_mode["description"] = "White balance mode for the captured photo";
   auto camera_tool_input_schema_properties_wb_mode_enum = camera_tool_input_schema_properties_wb_mode["enum"].to<JsonArray>();
   for (const auto &entry : camera_wb_modes)
+  {
     camera_tool_input_schema_properties_wb_mode_enum.add(entry.name);
+    if (entry.value == MCP_CAPTURE_WB_MODE)
+      camera_tool_input_schema_properties_wb_mode["default"] = entry.name;
+  }
   // Auto is the default white balance mode
   camera_tool_input_schema_properties_wb_mode["default"] = camera_wb_modes[0].name;
+  auto camera_tool_input_schema_properties_pixelformat = camera_tool_input_schema_properties["pixelformat"].to<JsonObject>();
+  camera_tool_input_schema_properties_pixelformat["type"] = "string";
+  camera_tool_input_schema_properties_pixelformat["description"] = "Pixel format for the captured photo";
+  auto camera_tool_input_schema_properties_pixelformat_enum = camera_tool_input_schema_properties_pixelformat["enum"].to<JsonArray>();
+  for (const auto &entry : pixel_formats)
+  {
+    camera_tool_input_schema_properties_pixelformat_enum.add(entry.name);
+    if (entry.pixel_format == MCP_CAPTURE_PIXELFORMAT)
+      camera_tool_input_schema_properties_pixelformat["default"] = entry.name;
+  }
   camera_tool_input_schema["additionalProperties"] = false;
 
   // Add WiFi status tool
@@ -413,6 +459,34 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     log_d("Capture: setting wb_mode %d -> %d", sensor->status.wb_mode, capture_whitebalance);
     sensor->set_wb_mode(sensor, capture_whitebalance);
   }
+
+  // Resolve the requested pixel format from the pixelformat argument (enum)
+  auto previous_pixelformat = sensor ? sensor->pixformat : PIXFORMAT_JPEG;
+  auto capture_pixelformat = previous_pixelformat;
+  if (!arguments["pixelformat"].isNull())
+  {
+    auto pixel_format = lookup_pixel_format(arguments["pixelformat"].as<const char *>());
+    if (pixel_format == PIXFORMAT_INVALID)
+    {
+      String valid_options;
+      for (const auto &entry : pixel_formats)
+      {
+        if (!valid_options.isEmpty())
+          valid_options += ", ";
+        valid_options += entry.name;
+      }
+      auto error = response.create_error();
+      error["code"] = error_code::invalid_params;
+      error["message"] = "Invalid pixelformat. Valid options: " + valid_options + ".";
+      return;
+    }
+    capture_pixelformat = pixel_format;
+  }
+  if (sensor && sensor->pixformat != capture_pixelformat)
+  {
+    log_d("Capture: setting pixelformat %d -> %d", sensor->pixformat, capture_pixelformat);
+    sensor->set_pixformat(sensor, capture_pixelformat);
+  }
   log_d("Capture: free heap before capture: %d", ESP.getFreeHeap());
 
   auto flash = arguments["flash"].as<String>();
@@ -471,6 +545,9 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   // Restore the previous capture white balance mode
   if (sensor && previous_whitebalance != capture_whitebalance)
     sensor->set_wb_mode(sensor, previous_whitebalance);
+  // Restore the previous capture pixel format
+  if (sensor && previous_pixelformat != capture_pixelformat)
+    sensor->set_pixformat(sensor, previous_pixelformat);
 }
 
 void tool_wifi_status(mcp_response &response)
