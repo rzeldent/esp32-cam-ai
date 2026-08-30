@@ -159,6 +159,29 @@ const framesize_t lookup_frame_size(const char *pin)
     return FRAMESIZE_INVALID;
 }
 
+typedef struct
+{
+    const char name[7];
+    const int value;
+} camera_wb_mode_entry_t;
+
+constexpr const camera_wb_mode_entry_t camera_wb_modes[] = {
+    {"Auto", 0},
+    {"Sunny", 1},
+    {"Cloudy", 2},
+    {"Office", 3},
+    {"Home", 4}};
+
+const int lookup_camera_wb_mode(const char *name)
+{
+    // Lookup table for the white balance name to wb_mode int
+    for (const auto &entry : camera_wb_modes)
+        if (strncmp(entry.name, name, sizeof(entry.name)) == 0)
+            return entry.value;
+
+    return -1; // Not found
+}
+
 void handle_tools_list(mcp_response &response)
 {
   auto result = response.create_result();
@@ -220,6 +243,20 @@ void handle_tools_list(mcp_response &response)
     if (entry.frame_size == MCP_CAPTURE_FRAMESIZE)
       camera_tool_input_schema_properties_frame_size["default"] = entry.name;
   }
+  auto camera_tool_input_schema_properties_quality = camera_tool_input_schema_properties["quality"].to<JsonObject>();
+  camera_tool_input_schema_properties_quality["type"] = "number";
+  camera_tool_input_schema_properties_quality["description"] = "JPEG quality for the captured photo (1-100)";
+  camera_tool_input_schema_properties_quality["minimum"] = 1;
+  camera_tool_input_schema_properties_quality["maximum"] = 100;
+  camera_tool_input_schema_properties_quality["default"] = MCP_CAPTURE_QUALITY;
+  auto camera_tool_input_schema_properties_wb_mode = camera_tool_input_schema_properties["whitebalance"].to<JsonObject>();
+  camera_tool_input_schema_properties_wb_mode["type"] = "string";
+  camera_tool_input_schema_properties_wb_mode["description"] = "White balance mode for the captured photo";
+  auto camera_tool_input_schema_properties_wb_mode_enum = camera_tool_input_schema_properties_wb_mode["enum"].to<JsonArray>();
+  for (const auto &entry : camera_wb_modes)
+    camera_tool_input_schema_properties_wb_mode_enum.add(entry.name);
+  // Auto is the default white balance mode
+  camera_tool_input_schema_properties_wb_mode["default"] = camera_wb_modes[0].name;
   camera_tool_input_schema["additionalProperties"] = false;
 
   // Add WiFi status tool
@@ -297,7 +334,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
 
   // Resolve the requested capture resolution from the frame_size argument (enum)
   auto requested_framesize = FRAMESIZE_INVALID;
-  if (arguments.containsKey("frame_size"))
+  if (!arguments["frame_size"].isNull())
   {
     requested_framesize = lookup_frame_size(arguments["frame_size"].as<const char *>());
     if (requested_framesize == FRAMESIZE_INVALID)
@@ -326,6 +363,55 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   {
     log_d("Capture: setting resolution %d -> %d", sensor->status.framesize, capture_framesize);
     sensor->set_framesize(sensor, capture_framesize);
+  }
+
+  // Resolve the requested JPEG quality (1-100) from the quality argument
+  auto previous_quality = sensor ? sensor->status.quality : MCP_CAPTURE_QUALITY;
+  auto capture_quality = previous_quality;
+  if (!arguments["quality"].isNull())
+  {
+    auto quality = arguments["quality"].as<int>();
+    if (quality < 1 || quality > 100)
+    {
+      auto error = response.create_error();
+      error["code"] = error_code::invalid_params;
+      error["message"] = "Invalid quality. Must be between 1 and 100.";
+      return;
+    }
+    capture_quality = quality;
+  }
+  if (sensor && sensor->status.quality != capture_quality)
+  {
+    log_d("Capture: setting quality %d -> %d", sensor->status.quality, capture_quality);
+    sensor->set_quality(sensor, capture_quality);
+  }
+
+  // Resolve the requested white balance mode from the wb_mode argument (enum)
+  auto previous_whitebalance = sensor ? sensor->status.wb_mode : 0;
+  auto capture_whitebalance = previous_whitebalance;
+  if (!arguments["whitebalance"].isNull())
+  {
+    auto wb_mode = lookup_camera_wb_mode(arguments["whitebalance"].as<const char *>());
+    if (wb_mode < 0)
+    {
+      String valid_options;
+      for (const auto &entry : camera_wb_modes)
+      {
+        if (!valid_options.isEmpty())
+          valid_options += ", ";
+        valid_options += entry.name;
+      }
+      auto error = response.create_error();
+      error["code"] = error_code::invalid_params;
+      error["message"] = "Invalid whitebalance. Valid options: " + valid_options + ".";
+      return;
+    }
+    capture_whitebalance = wb_mode;
+  }
+  if (sensor && sensor->status.wb_mode != capture_whitebalance)
+  {
+    log_d("Capture: setting wb_mode %d -> %d", sensor->status.wb_mode, capture_whitebalance);
+    sensor->set_wb_mode(sensor, capture_whitebalance);
   }
   log_d("Capture: free heap before capture: %d", ESP.getFreeHeap());
 
@@ -379,6 +465,12 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   // Restore the previous capture resolution
   if (sensor && previous_framesize != capture_framesize)
     sensor->set_framesize(sensor, previous_framesize);
+  // Restore the previous capture quality
+  if (sensor && previous_quality != capture_quality)
+    sensor->set_quality(sensor, previous_quality);
+  // Restore the previous capture white balance mode
+  if (sensor && previous_whitebalance != capture_whitebalance)
+    sensor->set_wb_mode(sensor, previous_whitebalance);
 }
 
 void tool_wifi_status(mcp_response &response)

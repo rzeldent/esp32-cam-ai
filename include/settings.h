@@ -6,6 +6,8 @@ constexpr auto MCP_VERSION = "1.0.1";
 
 // Maximum resolution for MCP "capture" tool photos (bounds JPEG size and memory)
 constexpr auto MCP_CAPTURE_FRAMESIZE = FRAMESIZE_VGA;
+// Default JPEG quality (1-100) for MCP "capture" tool photos
+constexpr auto MCP_CAPTURE_QUALITY = 20;
 
 constexpr auto WATCHDOG_TIMEOUT = 30000UL; // 30 seconds
 // Maximum accepted MCP request body size (bytes)
