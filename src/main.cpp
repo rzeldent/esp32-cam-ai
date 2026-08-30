@@ -8,6 +8,7 @@
 
 #include <mcp.h>
 #include <base64.h>
+#include <libb64/cdecode.h>
 
 #include "camera_config.h"
 #include "settings.h"
@@ -32,8 +33,6 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
-constexpr auto WATCHDOG_TIMEOUT = 30000UL; // 30 seconds
-
 // WiFi connection state, updated by WiFi events
 bool wifiConnected = false;
 
@@ -49,7 +48,11 @@ extern "C"
 }
 #endif
 
-WebServer server(80);
+WebServer server;
+
+// Configured MCP API credentials from settings.h.
+static const String mcp_api_user(MCP_API_USER);
+static const String mcp_api_password(MCP_API_PASSWORD);
 
 // Generic Accept-Encoding check
 static bool client_accepts(const char *encoding)
@@ -59,6 +62,31 @@ static bool client_accepts(const char *encoding)
   auto accept = server.header("Accept-Encoding");
   accept.toLowerCase();
   return accept.indexOf(encoding) >= 0;
+}
+
+// Returns true if the request is authorized. Authentication is disabled when
+// MCP_API_USER is empty; otherwise the request must present valid HTTP Basic
+// credentials (Authorization: Basic base64(user:password)).
+static bool request_authorized()
+{
+  if (mcp_api_user.length() == 0)
+    return true;
+
+  auto auth = server.header("Authorization");
+  if (!auth.startsWith("Basic "))
+    return false;
+
+  auto encoded = auth.substring(6);
+  encoded.trim();
+
+  auto expected = mcp_api_user + ":" + mcp_api_password;
+  auto decoded_len = base64_decode_expected_len(encoded.length()) + 1;
+  std::unique_ptr<char[]> decoded(new char[decoded_len]);
+  auto len = base64_decode_chars(encoded.c_str(), encoded.length(), decoded.get());
+  if (len < 0)
+    return false;
+  decoded[len] = '\0';
+  return String(decoded.get()) == expected;
 }
 
 #ifdef ENABLE_GZIP
@@ -76,7 +104,7 @@ static bool deflate_compress(const String &input, String &output)
   if (mz_compress2(buf.get(), &out_len, src, src_len, MZ_DEFAULT_LEVEL) != MZ_OK)
     return false;
 
-    output = String(reinterpret_cast<const char *>(buf.get()), static_cast<unsigned int>(out_len));
+  output = String(reinterpret_cast<const char *>(buf.get()), static_cast<unsigned int>(out_len));
   return true;
 }
 #endif
@@ -224,6 +252,16 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     return;
   }
 
+  // Cap the capture resolution to bound JPEG size and memory usage
+  auto sensor = esp_camera_sensor_get();
+  auto previous_framesize = sensor ? sensor->status.framesize : MCP_CAPTURE_FRAMESIZE;
+  if (sensor && sensor->status.framesize > MCP_CAPTURE_FRAMESIZE)
+  {
+    log_d("Capture: lowering resolution %d -> %d", sensor->status.framesize, MCP_CAPTURE_FRAMESIZE);
+    sensor->set_framesize(sensor, MCP_CAPTURE_FRAMESIZE);
+  }
+  log_d("Capture: free heap before capture: %d", ESP.getFreeHeap());
+
   auto flash = arguments["flash"].as<String>();
   if (flash == "on")
   {
@@ -232,7 +270,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   }
 
   // Discard 1-2 warm-up frames to ensure a fresh capture
-  auto fb  = esp_camera_fb_get();
+  auto fb = esp_camera_fb_get();
   if (fb)
     esp_camera_fb_return(fb);
 
@@ -253,8 +291,10 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     return;
   }
 
+  auto fb_len = fb->len;
   auto base64_image = base64::encode(fb->buf, fb->len);
   esp_camera_fb_return(fb);
+  log_d("Capture: JPEG %u bytes -> base64 %u bytes, free heap after: %d", (unsigned)fb_len, (unsigned)base64_image.length(), ESP.getFreeHeap());
 
   auto result = response.create_result();
   auto result_content = result["content"].to<JsonArray>();
@@ -266,6 +306,12 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   result_content_image_item["type"] = "image";
   result_content_image_item["data"] = base64_image;
   result_content_image_item["mimeType"] = "image/jpeg";
+  // Free the intermediate base64 String; the JSON document already holds its own copy
+  base64_image = String();
+
+  // Restore the previous capture resolution
+  if (sensor && previous_framesize != MCP_CAPTURE_FRAMESIZE)
+    sensor->set_framesize(sensor, previous_framesize);
 }
 
 void tool_wifi_status(mcp_response &response)
@@ -367,6 +413,24 @@ void handleRoot()
     return;
   }
 
+  // Enforce optional token authentication
+  if (!request_authorized())
+  {
+    server.sendHeader("WWW-Authenticate", String("Bearer realm=\"") + MCP_API_REALM + "\"");
+    log_w("Unauthorized request from %s", server.client().remoteIP().toString().c_str());
+    server.send(401, "text/plain", "Unauthorized");
+    return;
+  }
+
+  // Reject oversized request bodies before parsing them
+  auto content_length = server.clientContentLength();
+  if (content_length > MAX_MCP_REQUEST_SIZE)
+  {
+    log_w("Rejecting request: Content-Length %d exceeds %d bytes limit", content_length, MAX_MCP_REQUEST_SIZE);
+    server.send(413, "text/plain", "Payload Too Large");
+    return;
+  }
+
   mcp_response mcp_response;
   try
   {
@@ -420,7 +484,7 @@ void handleRoot()
       return;
     }
   }
-#endif  
+#endif
 
   // Deflate not enabled or failed, fall back to plain text
   log_d("Sending response: %d %s len=%u", http_code, content_type, (unsigned)body.length());
@@ -460,7 +524,7 @@ void setup()
 
   Serial.begin(115200);
 
-    // Initialize LED GPIOs
+  // Initialize LED GPIOs
   pinMode(LED_GPIO, OUTPUT);
   digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
   pinMode(FLASH_GPIO, OUTPUT);
@@ -499,7 +563,8 @@ void setup()
   MDNS.addServiceTxt("_jsonrpc", "_tcp", "protocol", "http");
   MDNS.addServiceTxt("_jsonrpc", "_tcp", "path", "/");
 
-  // Allow over the air updates
+  // Allow over the air updates (optionally password-protected)
+  ArduinoOTA.setPassword(MCP_OTA_PASSWORD);
   ArduinoOTA.begin();
 
   // Initialize camera
@@ -510,7 +575,7 @@ void setup()
     log_e("Camera init failed with error 0x%x", camera_init_result);
 
   // Register request headers to collect so hasHeader()/header() work for Accept-Encoding content negotiation
-  const char* headerkeys[] = {"Accept-Encoding"};
+  const char *headerkeys[] = {"Accept-Encoding"};
   server.collectHeaders(headerkeys, 1);
 
   server.on("/", HTTP_ANY, handleRoot);
