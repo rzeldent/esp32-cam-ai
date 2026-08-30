@@ -128,6 +128,37 @@ void handle_notifications_initialized(mcp_response &response)
   result["acknowledged"] = true;
 }
 
+typedef struct frame_size_entry
+{
+    const char name[17];
+    const framesize_t frame_size;
+} frame_size_entry_t;
+
+constexpr const frame_size_entry_t frame_sizes[] = {
+    {"QQVGA (160x120)", FRAMESIZE_QQVGA},
+    {"QCIF (176x144)", FRAMESIZE_QCIF},
+    {"HQVGA (240x176)", FRAMESIZE_HQVGA},
+    {"240x240", FRAMESIZE_240X240},
+    {"QVGA (320x240)", FRAMESIZE_QVGA},
+    {"CIF (400x296)", FRAMESIZE_CIF},
+    {"HVGA (480x320)", FRAMESIZE_HVGA},
+    {"VGA (640x480)", FRAMESIZE_VGA},
+    {"SVGA (800x600)", FRAMESIZE_SVGA},
+    {"XGA (1024x768)", FRAMESIZE_XGA},
+    {"HD (1280x720)", FRAMESIZE_HD},
+    {"SXGA (1280x1024)", FRAMESIZE_SXGA},
+    {"UXGA (1600x1200)", FRAMESIZE_UXGA}};
+
+const framesize_t lookup_frame_size(const char *pin)
+{
+    // Lookup table for the frame name to framesize_t
+    for (const auto &entry : frame_sizes)
+        if (strncmp(entry.name, pin, sizeof(entry.name)) == 0)
+            return entry.frame_size;
+
+    return FRAMESIZE_INVALID;
+}
+
 void handle_tools_list(mcp_response &response)
 {
   auto result = response.create_result();
@@ -178,6 +209,17 @@ void handle_tools_list(mcp_response &response)
   auto camera_tool_input_schema_properties_flash_enum_array = camera_tool_input_schema_properties_flash["enum"].to<JsonArray>();
   camera_tool_input_schema_properties_flash_enum_array.add("on");
   camera_tool_input_schema_properties_flash_enum_array.add("off");
+  auto camera_tool_input_schema_properties_frame_size = camera_tool_input_schema_properties["frame_size"].to<JsonObject>();
+  camera_tool_input_schema_properties_frame_size["type"] = "string";
+  camera_tool_input_schema_properties_frame_size["description"] = "Resolution to use for the captured photo";
+  auto camera_tool_input_schema_properties_frame_size_enum = camera_tool_input_schema_properties_frame_size["enum"].to<JsonArray>();
+  for (const auto &entry : frame_sizes)
+  {
+    camera_tool_input_schema_properties_frame_size_enum.add(entry.name);
+    // Use the configured capture cap (MCP_CAPTURE_FRAMESIZE) as the schema default
+    if (entry.frame_size == MCP_CAPTURE_FRAMESIZE)
+      camera_tool_input_schema_properties_frame_size["default"] = entry.name;
+  }
   camera_tool_input_schema["additionalProperties"] = false;
 
   // Add WiFi status tool
@@ -241,37 +283,6 @@ void tool_flash(JsonObject arguments, mcp_response &response)
   result_content_item["text"] = "Flash executed";
 }
 
-typedef struct frame_size_entry
-{
-    const char name[17];
-    const framesize_t frame_size;
-} frame_size_entry_t;
-
-constexpr const frame_size_entry_t frame_sizes[] = {
-    {"QQVGA (160x120)", FRAMESIZE_QQVGA},
-    {"QCIF (176x144)", FRAMESIZE_QCIF},
-    {"HQVGA (240x176)", FRAMESIZE_HQVGA},
-    {"240x240", FRAMESIZE_240X240},
-    {"QVGA (320x240)", FRAMESIZE_QVGA},
-    {"CIF (400x296)", FRAMESIZE_CIF},
-    {"HVGA (480x320)", FRAMESIZE_HVGA},
-    {"VGA (640x480)", FRAMESIZE_VGA},
-    {"SVGA (800x600)", FRAMESIZE_SVGA},
-    {"XGA (1024x768)", FRAMESIZE_XGA},
-    {"HD (1280x720)", FRAMESIZE_HD},
-    {"SXGA (1280x1024)", FRAMESIZE_SXGA},
-    {"UXGA (1600x1200)", FRAMESIZE_UXGA}};
-
-const framesize_t lookup_frame_size(const char *pin)
-{
-    // Lookup table for the frame name to framesize_t
-    for (const auto &entry : frame_sizes)
-        if (strncmp(entry.name, pin, sizeof(entry.name)) == 0)
-            return entry.frame_size;
-
-    return FRAMESIZE_INVALID;
-}
-
 void tool_capture(JsonObject arguments, mcp_response &response)
 {
   if (camera_init_result != ESP_OK)
@@ -282,13 +293,39 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     return;
   }
 
-  // Cap the capture resolution to bound JPEG size and memory usage
   auto sensor = esp_camera_sensor_get();
-  auto previous_framesize = sensor ? sensor->status.framesize : MCP_CAPTURE_FRAMESIZE;
-  if (sensor && sensor->status.framesize > MCP_CAPTURE_FRAMESIZE)
+
+  // Resolve the requested capture resolution from the frame_size argument (enum)
+  auto requested_framesize = FRAMESIZE_INVALID;
+  if (arguments.containsKey("frame_size"))
   {
-    log_d("Capture: lowering resolution %d -> %d", sensor->status.framesize, MCP_CAPTURE_FRAMESIZE);
-    sensor->set_framesize(sensor, MCP_CAPTURE_FRAMESIZE);
+    requested_framesize = lookup_frame_size(arguments["frame_size"].as<const char *>());
+    if (requested_framesize == FRAMESIZE_INVALID)
+    {
+      String valid_options;
+      for (const auto &entry : frame_sizes)
+      {
+        if (!valid_options.isEmpty())
+          valid_options += ", ";
+        valid_options += entry.name;
+      }
+      auto error = response.create_error();
+      error["code"] = error_code::invalid_params;
+      error["message"] = "Invalid frame_size. Valid options: " + valid_options + ".";
+      return;
+    }
+  }
+
+  auto previous_framesize = sensor ? sensor->status.framesize : MCP_CAPTURE_FRAMESIZE;
+  auto capture_framesize = requested_framesize == FRAMESIZE_INVALID ? previous_framesize : requested_framesize;
+
+  // Cap the capture resolution to bound JPEG size and memory usage
+  if (capture_framesize > MCP_CAPTURE_FRAMESIZE)
+    capture_framesize = MCP_CAPTURE_FRAMESIZE;
+  if (sensor && sensor->status.framesize != capture_framesize)
+  {
+    log_d("Capture: setting resolution %d -> %d", sensor->status.framesize, capture_framesize);
+    sensor->set_framesize(sensor, capture_framesize);
   }
   log_d("Capture: free heap before capture: %d", ESP.getFreeHeap());
 
@@ -340,7 +377,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   base64_image = String();
 
   // Restore the previous capture resolution
-  if (sensor && previous_framesize != MCP_CAPTURE_FRAMESIZE)
+  if (sensor && previous_framesize != capture_framesize)
     sensor->set_framesize(sensor, previous_framesize);
 }
 
