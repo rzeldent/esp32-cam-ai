@@ -18,11 +18,11 @@ curl -i -X POST "$ESP32_URL" \
   -H "Content-Type: application/json" \
   -H "Origin: http://localhost:3000" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 1,
     "method": "initialize",
     "params": {
-      "protocolVersion": "2024-11-05",
+      "protocolVersion": "2025-06-18",
       "capabilities": {},
       "clientInfo": {
         "name": "CORS Test Client",

@@ -7,7 +7,7 @@
 [![Platform: ESP32-CAM](https://img.shields.io/badge/Platform-ESP32--CAM-blue)](https://www.espressif.com/)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-00979D)](https://www.arduino.cc/)
 [![Language: C++](https://img.shields.io/badge/Language-C%2B%2B-00599C)](https://isocpp.org/)
-[![MCP: 2024-11-05](https://img.shields.io/badge/MCP-2024--11--05-blueviolet)](https://modelcontextprotocol.io/)
+[![MCP: 2025-06-18](https://img.shields.io/badge/MCP-2025--06--18-blueviolet)](https://modelcontextprotocol.io/)
 [![Release](https://img.shields.io/github/v/release/rzeldent/esp32-cam-ai)](https://github.com/rzeldent/esp32-cam-ai/releases)
 
 [<img src="assets/images/esp32-cam-ai.png" alt="ESP32-CAM-AI" width="320">](assets/images/esp32-cam-ai.png)
@@ -43,7 +43,7 @@ Brief: **Use Copilot or other AI digital assistants, like AI-Toolkit (in VSCode)
 
 ### MCP Protocol Support
 
-- **Standard Compliance**: Full MCP 2024-11-05 protocol implementation
+- **Standard Compliance**: Full MCP 2025-06-18 protocol implementation
 - **Tool Schema**: Proper JSON schema validation for all tools
 - **Error Handling**: Comprehensive error reporting with proper codes
 - **Notifications**: Support for `notifications/initialized`
@@ -182,7 +182,7 @@ Controls the ESP32-CAM's built-in LED state.
 
 **Parameters:**
 
-- `state` (required): `"on"` or `"off"`
+- `on` (required): `true` or `false`
 
 **Example:**
 
@@ -192,7 +192,7 @@ Controls the ESP32-CAM's built-in LED state.
   "method": "tools/call",
   "params": {
     "name": "led",
-    "arguments": {"state": "on"}
+    "arguments": {"on": true}
   }
 }
 ```
@@ -224,7 +224,11 @@ Captures a photo from the ESP32-CAM sensor.
 
 **Parameters:**
 
-- `flash` (optional): `"on"` or `"off"` - Use flash during capture
+- `flash` (optional): `true` or `false` - Use flash during capture
+- `frame_size` (optional): Resolution, e.g. `VGA (640x480)`
+- `quality` (optional): JPEG quality 1-100 (default: 20)
+- `whitebalance` (optional): `Auto`, `Sunny`, `Cloudy`, `Office`, or `Home`
+- `pixelformat` (optional): e.g. `JPEG`, `RGB565`, `Grayscale`
 
 **Response:**
 
@@ -240,7 +244,7 @@ Captures a photo from the ESP32-CAM sensor.
   "method": "tools/call",
   "params": {
     "name": "capture",
-    "arguments": {"flash": "on"}
+    "arguments": {"flash": true}
   }
 }
 ```
@@ -306,7 +310,7 @@ Provides comprehensive system diagnostics and health monitoring.
 
 ```powershell
 # Capture image with flash
-$body = '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "capture", "arguments": {"flash": "on"}}}'
+$body = '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "capture", "arguments": {"flash": true}}}'
 Invoke-RestMethod -Uri "http://192.168.1.132/" -Method Post -Body $body -ContentType "application/json"
 ```
 
@@ -537,7 +541,7 @@ def capture_image(esp32_ip, use_flash=False):
         "method": "tools/call",
         "params": {
             "name": "capture",
-            "arguments": {"flash": "on" if use_flash else "off"}
+            "arguments": {"flash": True if use_flash else False}
         }
     }
     
@@ -573,7 +577,7 @@ async function captureImage(esp32IP, useFlash = false) {
         method: "tools/call",
         params: {
             name: "capture",
-            arguments: { flash: useFlash ? "on" : "off" }
+            arguments: { flash: useFlash }
         }
     };
     

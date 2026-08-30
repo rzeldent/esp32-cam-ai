@@ -12,13 +12,13 @@ echo "Capturing image from ESP32-CAM..."
 RESPONSE=$(curl -s -X POST "$ESP32_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/call",
     "params": {
       "name": "capture",
       "arguments": {
-        "flash": "on"
+        "flash": true
       }
     }
   }')

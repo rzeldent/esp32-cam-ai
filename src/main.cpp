@@ -12,6 +12,7 @@
 
 #include "camera_config.h"
 #include "settings.h"
+#include "tool_schema.h"
 
 #ifdef ENABLE_GZIP
 // miniz is a small public-domain zlib/gzip alternative commonly available with ESP32 Arduino
@@ -33,8 +34,6 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
-// Result of camera initialization
-esp_err_t camera_init_result = ESP_OK;
 // Temperature export (funny; has a typo!)
 #ifdef __cplusplus
 extern "C"
@@ -162,6 +161,16 @@ const framesize_t lookup_frame_size(const char *pin)
     return FRAMESIZE_INVALID;
 }
 
+const char *lookup_frame_size_name(framesize_t size)
+{
+    // Lookup table for framesize_t to a display name
+    for (const auto &entry : frame_sizes)
+        if (entry.frame_size == size)
+            return entry.name;
+
+    return "Unknown";
+}
+
 typedef struct pixel_format_entry
 {
     const char name[12];
@@ -191,6 +200,16 @@ const pixformat_t lookup_pixel_format(const char *pin)
     return PIXFORMAT_INVALID;
 }
 
+const char *lookup_pixel_format_name(pixformat_t fmt)
+{
+    // Lookup table for pixformat_t to a display name
+    for (const auto &entry : pixel_formats)
+        if (entry.pixel_format == fmt)
+            return entry.name;
+
+    return "Unknown";
+}
+
 typedef struct
 {
     const char name[7];
@@ -214,120 +233,60 @@ const int lookup_camera_wb_mode(const char *name)
     return -1; // Not found
 }
 
+const char *lookup_camera_wb_mode_name(int mode)
+{
+    // Lookup table for wb_mode int to a display name
+    for (const auto &entry : camera_wb_modes)
+        if (entry.value == mode)
+            return entry.name;
+
+    return "Unknown";
+}
+
 void handle_tools_list(mcp_response &response)
 {
   auto result = response.create_result();
   auto tools = result["tools"].to<JsonArray>();
 
   // Add LED control tool
-  auto led_tool = tools.add<JsonObject>();
-  led_tool["name"] = "led";
-  led_tool["description"] = "Controls the ESP32-CAM LED state";
-  auto led_tool_input_schema = led_tool["inputSchema"].to<JsonObject>();
-  led_tool_input_schema["type"] = "object";
-  auto led_tool_input_schema_properties = led_tool_input_schema["properties"].to<JsonObject>();
-  auto led_tool_input_schema_properties_state = led_tool_input_schema_properties["state"].to<JsonObject>();
-  led_tool_input_schema_properties_state["type"] = "string";
-  led_tool_input_schema_properties_state["description"] = "LED state";
-  auto led_tool_input_schema_properties_state_enum_array = led_tool_input_schema_properties_state["enum"].to<JsonArray>();
-  led_tool_input_schema_properties_state_enum_array.add("on");
-  led_tool_input_schema_properties_state_enum_array.add("off");
-  auto led_tool_input_schema_properties_state_required = led_tool_input_schema_properties_state["required"].to<JsonArray>();
-  led_tool_input_schema_properties_state_required.add("state");
-  led_tool_input_schema["additionalProperties"] = false;
+  tool_schema led_tool(tools.add<JsonObject>(), "led", "Controls the ESP32-CAM LED state");
+  led_tool.boolean("on", "LED on", false).required("on");
 
-  // Add Flash control tool
-  auto flash_tool = tools.add<JsonObject>();
-  flash_tool["name"] = "flash";
-  flash_tool["description"] = "Controls the ESP32-CAM Flash";
-  auto flash_tool_input_schema = flash_tool["inputSchema"].to<JsonObject>();
-  flash_tool_input_schema["type"] = "object";
-  auto flash_tool_input_schema_properties = flash_tool_input_schema["properties"].to<JsonObject>();
-  auto flash_tool_input_schema_properties_duration = flash_tool_input_schema_properties["duration"].to<JsonObject>();
-  flash_tool_input_schema_properties_duration["description"] = "Flash duration in milliseconds";
-  flash_tool_input_schema_properties_duration["type"] = "number";
-  flash_tool_input_schema_properties_duration["minimum"] = 5;
-  flash_tool_input_schema_properties_duration["maximum"] = 100;
-  flash_tool_input_schema_properties_duration["default"] = 50;
-  flash_tool_input_schema["additionalProperties"] = false;
+  // Add flash control tool
+  tool_schema flash_tool(tools.add<JsonObject>(), "flash", "Controls the ESP32-CAM Flash");
+  flash_tool.number("duration", "Flash duration in milliseconds", 5, 100, 50);
 
   // Add camera capture tool
-  auto camera_tool = tools.add<JsonObject>();
-  camera_tool["name"] = "capture";
-  camera_tool["description"] = "Captures a photo from the ESP32-CAM";
-  auto camera_tool_input_schema = camera_tool["inputSchema"].to<JsonObject>();
-  camera_tool_input_schema["type"] = "object";
-  auto camera_tool_input_schema_properties = camera_tool_input_schema["properties"].to<JsonObject>();
-  auto camera_tool_input_schema_properties_flash = camera_tool_input_schema_properties["flash"].to<JsonObject>();
-  camera_tool_input_schema_properties_flash["type"] = "string";
-  camera_tool_input_schema_properties_flash["description"] = "Use flash when capturing";
-  auto camera_tool_input_schema_properties_flash_enum_array = camera_tool_input_schema_properties_flash["enum"].to<JsonArray>();
-  camera_tool_input_schema_properties_flash_enum_array.add("on");
-  camera_tool_input_schema_properties_flash_enum_array.add("off");
-  auto camera_tool_input_schema_properties_frame_size = camera_tool_input_schema_properties["frame_size"].to<JsonObject>();
-  camera_tool_input_schema_properties_frame_size["type"] = "string";
-  camera_tool_input_schema_properties_frame_size["description"] = "Resolution to use for the captured photo";
-  auto camera_tool_input_schema_properties_frame_size_enum = camera_tool_input_schema_properties_frame_size["enum"].to<JsonArray>();
-  for (const auto &entry : frame_sizes)
-  {
-    camera_tool_input_schema_properties_frame_size_enum.add(entry.name);
-    // Use the configured capture cap (MCP_CAPTURE_FRAMESIZE) as the schema default
-    if (entry.frame_size == MCP_CAPTURE_FRAMESIZE)
-      camera_tool_input_schema_properties_frame_size["default"] = entry.name;
-  }
-  auto camera_tool_input_schema_properties_quality = camera_tool_input_schema_properties["quality"].to<JsonObject>();
-  camera_tool_input_schema_properties_quality["type"] = "number";
-  camera_tool_input_schema_properties_quality["description"] = "JPEG quality for the captured photo (1-100)";
-  camera_tool_input_schema_properties_quality["minimum"] = 1;
-  camera_tool_input_schema_properties_quality["maximum"] = 100;
-  camera_tool_input_schema_properties_quality["default"] = MCP_CAPTURE_QUALITY;
-  auto camera_tool_input_schema_properties_wb_mode = camera_tool_input_schema_properties["whitebalance"].to<JsonObject>();
-  camera_tool_input_schema_properties_wb_mode["type"] = "string";
-  camera_tool_input_schema_properties_wb_mode["description"] = "White balance mode for the captured photo";
-  auto camera_tool_input_schema_properties_wb_mode_enum = camera_tool_input_schema_properties_wb_mode["enum"].to<JsonArray>();
-  for (const auto &entry : camera_wb_modes)
-  {
-    camera_tool_input_schema_properties_wb_mode_enum.add(entry.name);
-    if (entry.value == MCP_CAPTURE_WB_MODE)
-      camera_tool_input_schema_properties_wb_mode["default"] = entry.name;
-  }
-  // Auto is the default white balance mode
-  camera_tool_input_schema_properties_wb_mode["default"] = camera_wb_modes[0].name;
-  auto camera_tool_input_schema_properties_pixelformat = camera_tool_input_schema_properties["pixelformat"].to<JsonObject>();
-  camera_tool_input_schema_properties_pixelformat["type"] = "string";
-  camera_tool_input_schema_properties_pixelformat["description"] = "Pixel format for the captured photo";
-  auto camera_tool_input_schema_properties_pixelformat_enum = camera_tool_input_schema_properties_pixelformat["enum"].to<JsonArray>();
-  for (const auto &entry : pixel_formats)
-  {
-    camera_tool_input_schema_properties_pixelformat_enum.add(entry.name);
-    if (entry.pixel_format == MCP_CAPTURE_PIXELFORMAT)
-      camera_tool_input_schema_properties_pixelformat["default"] = entry.name;
-  }
-  camera_tool_input_schema["additionalProperties"] = false;
+  tool_schema camera_tool(tools.add<JsonObject>(), "capture", "Captures a photo from the ESP32-CAM");
+  camera_tool
+      .boolean("flash", "Use flash when capturing", false)
+      .enum_table("frame_size", "Resolution to use for the captured photo", frame_sizes,
+                  [](const frame_size_entry_t &entry) { return entry.frame_size == MCP_CAPTURE_FRAMESIZE; })
+      .number("quality", "JPEG quality for the captured photo (1-100)", 1, 100, MCP_CAPTURE_QUALITY)
+      .enum_table("whitebalance", "White balance mode for the captured photo", camera_wb_modes,
+                  [](const camera_wb_mode_entry_t &entry) { return entry.value == MCP_CAPTURE_WB_MODE; })
+      .enum_table("pixelformat", "Pixel format for the captured photo", pixel_formats,
+                  [](const pixel_format_entry_t &entry) { return entry.pixel_format == MCP_CAPTURE_PIXELFORMAT; });
 
   // Add WiFi status tool
-  auto wifi_tool = tools.add<JsonObject>();
-  wifi_tool["name"] = "wifi_status";
-  wifi_tool["description"] = "Gets current WiFi connection status and network information";
-  auto wifi_tool_input_schema = wifi_tool["inputSchema"].to<JsonObject>();
-  wifi_tool_input_schema["type"] = "object";
-  auto wifi_tool_input_schema_properties = wifi_tool_input_schema["properties"].to<JsonObject>();
-  wifi_tool_input_schema["additionalProperties"] = false;
+  tool_schema wifi_tool(tools.add<JsonObject>(), "wifi_status",
+                        "Gets current WiFi connection status and network information. "
+                        "Returns: ip_address (string, IPv4), signal_strength_dbm (integer, dBm), "
+                        "mac_address (string), gateway (string, IPv4), dns (string, IPv4)");
 
   // Add system status tool
-  auto system_tool = tools.add<JsonObject>();
-  system_tool["name"] = "system_status";
-  system_tool["description"] = "Gets comprehensive system status including memory, uptime, and hardware info";
-  auto system_tool_input_schema = system_tool["inputSchema"].to<JsonObject>();
-  system_tool_input_schema["type"] = "object";
-  auto system_tool_input_schema_properties = system_tool_input_schema["properties"].to<JsonObject>();
-  system_tool_input_schema["additionalProperties"] = false;
+  tool_schema system_tool(tools.add<JsonObject>(), "system_status",
+                          "Gets comprehensive system status including memory, uptime, and hardware info. "
+                          "Returns: uptime_seconds (integer), free_heap_bytes (integer), min_free_heap_bytes (integer), "
+                          "max_alloc_heap_bytes (integer), cpu_frequency_mhz (integer), flash_size_bytes (integer), "
+                          "flash_speed_hz (integer), sketch_size_bytes (integer), free_sketch_space_bytes (integer), "
+                          "sdk_version (string), reset_reason (integer), camera_initialized (boolean), "
+                          "internal_temperature_c (number, °C)");
 }
 
 void tool_led(JsonObject arguments, mcp_response &response)
 {
-  auto state = arguments["state"].as<String>();
-  if (state == "on")
+  if (arguments["on"].as<bool>())
   {
     digitalWrite(LED_GPIO, LED_ON_LEVEL);
     auto result = response.create_result();
@@ -336,7 +295,7 @@ void tool_led(JsonObject arguments, mcp_response &response)
     result_content_item["type"] = "text";
     result_content_item["text"] = "LED turned on";
   }
-  else if (state == "off")
+  else
   {
     digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW);
     auto result = response.create_result();
@@ -344,12 +303,6 @@ void tool_led(JsonObject arguments, mcp_response &response)
     auto result_content_item = result_content.add<JsonObject>();
     result_content_item["type"] = "text";
     result_content_item["text"] = "LED turned off";
-  }
-  else
-  {
-    auto error = response.create_error();
-    error["code"] = error_code::invalid_params;
-    error["message"] = "Invalid LED state. Use 'on' or 'off'.";
   }
 }
 
@@ -368,16 +321,6 @@ void tool_flash(JsonObject arguments, mcp_response &response)
 
 void tool_capture(JsonObject arguments, mcp_response &response)
 {
-  if (camera_init_result != ESP_OK)
-  {
-    auto error = response.create_error();
-    error["code"] = error_code::internal_error;
-    error["message"] = "Camera not initialized or failed to initialize";
-    return;
-  }
-
-  auto sensor = esp_camera_sensor_get();
-
   // Resolve the requested capture resolution from the frame_size argument (enum)
   auto requested_framesize = FRAMESIZE_INVALID;
   if (!arguments["frame_size"].isNull())
@@ -398,22 +341,10 @@ void tool_capture(JsonObject arguments, mcp_response &response)
       return;
     }
   }
-
-  auto previous_framesize = sensor ? sensor->status.framesize : MCP_CAPTURE_FRAMESIZE;
-  auto capture_framesize = requested_framesize == FRAMESIZE_INVALID ? previous_framesize : requested_framesize;
-
-  // Cap the capture resolution to bound JPEG size and memory usage
-  if (capture_framesize > MCP_CAPTURE_FRAMESIZE)
-    capture_framesize = MCP_CAPTURE_FRAMESIZE;
-  if (sensor && sensor->status.framesize != capture_framesize)
-  {
-    log_d("Capture: setting resolution %d -> %d", sensor->status.framesize, capture_framesize);
-    sensor->set_framesize(sensor, capture_framesize);
-  }
+  auto capture_framesize = requested_framesize == FRAMESIZE_INVALID ? MCP_CAPTURE_FRAMESIZE : requested_framesize;
 
   // Resolve the requested JPEG quality (1-100) from the quality argument
-  auto previous_quality = sensor ? sensor->status.quality : MCP_CAPTURE_QUALITY;
-  auto capture_quality = previous_quality;
+  auto capture_quality = MCP_CAPTURE_QUALITY;
   if (!arguments["quality"].isNull())
   {
     auto quality = arguments["quality"].as<int>();
@@ -426,15 +357,9 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     }
     capture_quality = quality;
   }
-  if (sensor && sensor->status.quality != capture_quality)
-  {
-    log_d("Capture: setting quality %d -> %d", sensor->status.quality, capture_quality);
-    sensor->set_quality(sensor, capture_quality);
-  }
 
   // Resolve the requested white balance mode from the wb_mode argument (enum)
-  auto previous_whitebalance = sensor ? sensor->status.wb_mode : 0;
-  auto capture_whitebalance = previous_whitebalance;
+  auto capture_whitebalance = MCP_CAPTURE_WB_MODE;
   if (!arguments["whitebalance"].isNull())
   {
     auto wb_mode = lookup_camera_wb_mode(arguments["whitebalance"].as<const char *>());
@@ -454,15 +379,9 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     }
     capture_whitebalance = wb_mode;
   }
-  if (sensor && sensor->status.wb_mode != capture_whitebalance)
-  {
-    log_d("Capture: setting wb_mode %d -> %d", sensor->status.wb_mode, capture_whitebalance);
-    sensor->set_wb_mode(sensor, capture_whitebalance);
-  }
 
   // Resolve the requested pixel format from the pixelformat argument (enum)
-  auto previous_pixelformat = sensor ? sensor->pixformat : PIXFORMAT_JPEG;
-  auto capture_pixelformat = previous_pixelformat;
+  auto capture_pixelformat = MCP_CAPTURE_PIXELFORMAT;
   if (!arguments["pixelformat"].isNull())
   {
     auto pixel_format = lookup_pixel_format(arguments["pixelformat"].as<const char *>());
@@ -482,15 +401,29 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     }
     capture_pixelformat = pixel_format;
   }
-  if (sensor && sensor->pixformat != capture_pixelformat)
+
+  // Build the camera configuration with the requested parameters and (re)initialize
+  camera_config_t config = esp32cam_aithinker_settings;
+  config.frame_size = capture_framesize;
+  config.pixel_format = capture_pixelformat;
+  config.jpeg_quality = capture_quality;
+
+  auto camera_init_result = esp_camera_init(&config);
+  if (camera_init_result != ESP_OK)
   {
-    log_d("Capture: setting pixelformat %d -> %d", sensor->pixformat, capture_pixelformat);
-    sensor->set_pixformat(sensor, capture_pixelformat);
+    auto error = response.create_error();
+    error["code"] = error_code::internal_error;
+    error["message"] = "Camera initialization failed (0x" + String(camera_init_result, 16) + ")";
+    return;
   }
+
+  auto sensor = esp_camera_sensor_get();
+  if (sensor)
+    sensor->set_wb_mode(sensor, capture_whitebalance);
+
   log_d("Capture: free heap before capture: %d", ESP.getFreeHeap());
 
-  auto flash = arguments["flash"].as<String>();
-  if (flash == "on")
+  if (arguments["flash"].as<bool>())
   {
     digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
     delay(20); // Allow flash to stabilize
@@ -500,18 +433,28 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   auto fb = esp_camera_fb_get();
   if (fb)
     esp_camera_fb_return(fb);
+  else
+    log_w("Capture: warm-up frame failed");
 
   fb = esp_camera_fb_get();
   if (fb)
     esp_camera_fb_return(fb);
+else
+    log_w("Capture: warm-up frame failed");
 
   // Take the actual frame
   fb = esp_camera_fb_get();
+  if (fb)
+    log_d("Capture: captured frame: %u bytes, free heap after capture: %d", (unsigned)fb->len, ESP.getFreeHeap());
+  else
+    log_w("Capture: failed to capture frame, free heap after capture: %d", ESP.getFreeHeap());
+  
   // Turn flash off immediately after capture attempt
   digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
 
   if (!fb)
   {
+    esp_camera_deinit();
     auto error = response.create_error();
     error["code"] = error_code::internal_error;
     error["message"] = "Camera capture failed";
@@ -519,44 +462,45 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   }
 
   auto fb_len = fb->len;
+  auto fb_width = fb->width;
+  auto fb_height = fb->height;
   auto base64_image = base64::encode(fb->buf, fb->len);
   esp_camera_fb_return(fb);
+  esp_camera_deinit();
   log_d("Capture: JPEG %u bytes -> base64 %u bytes, free heap after: %d", (unsigned)fb_len, (unsigned)base64_image.length(), ESP.getFreeHeap());
 
   auto result = response.create_result();
   auto result_content = result["content"].to<JsonArray>();
   auto result_content_item = result_content.add<JsonObject>();
   result_content_item["type"] = "text";
-  result_content_item["text"] = "Image captured successfully. Size: " + String(base64_image.length()) + " bytes (base64 encoded)";
+  auto capture_text = String("Image captured successfully. ");
+  capture_text += "Pixel format: " + String(lookup_pixel_format_name(capture_pixelformat)) + ", ";
+  capture_text += "Frame size: " + String(lookup_frame_size_name(capture_framesize)) + ", ";
+  capture_text += "Quality: " + String(capture_quality) + ", ";
+  capture_text += "White balance: " + String(lookup_camera_wb_mode_name(capture_whitebalance)) + ", ";
+  capture_text += "Flash: " + String(arguments["flash"].as<bool>() ? "on" : "off") + ", ";
+  capture_text += "Dimensions: " + String(fb_width) + "x" + String(fb_height) + ", ";
+  capture_text += "Size: " + String(base64_image.length()) + " bytes (base64 encoded)";
+  result_content_item["text"] = capture_text;
 
-  auto result_content_image_item = result_content.add<JsonObject>();
-  result_content_image_item["type"] = "image";
-  result_content_image_item["data"] = base64_image;
-  result_content_image_item["mimeType"] = "image/jpeg";
+  auto structured = result["structuredContent"].to<JsonObject>();
+  structured["image"] = base64_image;
+  structured["format"] = lookup_pixel_format_name(capture_pixelformat);
+  structured["width"] = fb_width;
+  structured["height"] = fb_height;
+  structured["mimeType"] = capture_pixelformat == PIXFORMAT_JPEG ? "image/jpeg" : "image/x-raw";
   // Free the intermediate base64 String; the JSON document already holds its own copy
   base64_image = String();
-
-  // Restore the previous capture resolution
-  if (sensor && previous_framesize != capture_framesize)
-    sensor->set_framesize(sensor, previous_framesize);
-  // Restore the previous capture quality
-  if (sensor && previous_quality != capture_quality)
-    sensor->set_quality(sensor, previous_quality);
-  // Restore the previous capture white balance mode
-  if (sensor && previous_whitebalance != capture_whitebalance)
-    sensor->set_wb_mode(sensor, previous_whitebalance);
-  // Restore the previous capture pixel format
-  if (sensor && previous_pixelformat != capture_pixelformat)
-    sensor->set_pixformat(sensor, previous_pixelformat);
 }
 
 void tool_wifi_status(mcp_response &response)
 {
   auto result = response.create_result();
   auto result_content = result["content"].to<JsonArray>();
-  auto result_content_item = result_content.add<JsonObject>();
-  result_content_item["type"] = "text";
 
+  // Human-readable text summary
+  auto summary_item = result_content.add<JsonObject>();
+  summary_item["type"] = "text";
   auto status_text = String();
   status_text.reserve(256); // Pre-allocate to avoid repeated reallocations
   status_text += "IP Address: " + WiFi.localIP().toString() + "\n"
@@ -564,17 +508,27 @@ void tool_wifi_status(mcp_response &response)
                  "MAC Address: " + WiFi.macAddress() + "\n"
                  "Gateway: " + WiFi.gatewayIP().toString() + "\n"
                  "DNS: " + WiFi.dnsIP().toString() + "\n";
-  result_content_item["text"] = status_text;
+  summary_item["text"] = status_text;
+
+  // Return the parameters individually as structuredContent (MCP 2025-06-18+)
+  auto structured = result["structuredContent"].to<JsonObject>();
+  structured["ip_address"] = WiFi.localIP().toString();
+  structured["signal_strength_dbm"] = WiFi.RSSI();
+  structured["mac_address"] = WiFi.macAddress();
+  structured["gateway"] = WiFi.gatewayIP().toString();
+  structured["dns"] = WiFi.dnsIP().toString();
 }
 
 void tool_system_status(mcp_response &response)
 {
   auto result = response.create_result();
   auto result_content = result["content"].to<JsonArray>();
-  auto result_content_item = result_content.add<JsonObject>();
-  result_content_item["type"] = "text";
 
   auto internal_temperature = (temprature_sens_read() - 32) / 1.8;
+
+  // Human-readable text summary
+  auto summary_item = result_content.add<JsonObject>();
+  summary_item["type"] = "text";
   auto status_text = String();
   status_text.reserve(1024); // Pre-allocate to avoid repeated reallocations
   status_text += "Uptime: " + String(millis() / 1000) + " seconds\n"
@@ -588,9 +542,23 @@ void tool_system_status(mcp_response &response)
                  "Free Sketch Space: " + String(ESP.getFreeSketchSpace()) + " bytes\n"
                  "SDK Version: " + String(ESP.getSdkVersion()) + "\n"
                  "Reset Reason: " + String(esp_reset_reason()) + "\n"
-                 "Camera initialized: " + String(camera_init_result == ESP_OK ? "Yes" : "No (code = 0x" + String(camera_init_result, 16) + ")") + "\n"
                  "Internal Temperature: " + String(internal_temperature, 2) + " °C\n";
-  result_content_item["text"] = status_text;
+  summary_item["text"] = status_text;
+
+  // Return the parameters individually as structuredContent (MCP 2025-06-18+)
+  auto structured = result["structuredContent"].to<JsonObject>();
+  structured["uptime_seconds"] = millis() / 1000;
+  structured["free_heap_bytes"] = ESP.getFreeHeap();
+  structured["min_free_heap_bytes"] = ESP.getMinFreeHeap();
+  structured["max_alloc_heap_bytes"] = ESP.getMaxAllocHeap();
+  structured["cpu_frequency_mhz"] = getCpuFrequencyMhz();
+  structured["flash_size_bytes"] = ESP.getFlashChipSize();
+  structured["flash_speed_hz"] = ESP.getFlashChipSpeed();
+  structured["sketch_size_bytes"] = ESP.getSketchSize();
+  structured["free_sketch_space_bytes"] = ESP.getFreeSketchSpace();
+  structured["sdk_version"] = ESP.getSdkVersion();
+  structured["reset_reason"] = esp_reset_reason();
+  structured["internal_temperature_c"] = internal_temperature;
 }
 
 void handle_tools_call(const mcp_request &request, mcp_response &response)
@@ -771,12 +739,7 @@ void setup()
   ArduinoOTA.setPassword(MCP_OTA_PASSWORD);
   ArduinoOTA.begin();
 
-  // Initialize camera
-  camera_init_result = esp_camera_init(&esp32cam_aithinker_settings);
-  if (camera_init_result == ESP_OK)
-    log_i("Camera initialized successfully");
-  else
-    log_e("Camera init failed with error 0x%x", camera_init_result);
+  // Camera is initialized on demand inside tool_capture with the requested parameters
 
   // Register request headers to collect so hasHeader()/header() work for Accept-Encoding content negotiation
   const char *headerkeys[] = {"Accept-Encoding"};

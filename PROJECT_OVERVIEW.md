@@ -44,7 +44,7 @@ pio device monitor
 ### LED Control
 
 - **Function**: Control built-in LED
-- **Parameters**: `state` ("on" or "off")
+- **Parameters**: `on` (true or false)
 
 ### Flash Control  
 
@@ -54,7 +54,7 @@ pio device monitor
 ### Image Capture
 
 - **Function**: Capture JPEG image
-- **Parameters**: `flash` ("on" or "off", optional)
+- **Parameters**: `flash` (true or false, optional), `frame_size`, `quality`, `whitebalance`, `pixelformat`
 - **Output**: Base64-encoded JPEG image data
 - **Important**: Images are automatically resized to stay below 4KB base64 encoding limit due to AI client data constraints
 
@@ -76,7 +76,7 @@ The server accepts HTTP POST requests with JSON-RPC 2.0 format on port 80.
 
 ```json
 {
-  "jsonrpc": "2024-11-05",
+  "jsonrpc": "2.0",
   "id": 1,
   "method": "tools/call",
   "params": {
@@ -92,12 +92,12 @@ The server accepts HTTP POST requests with JSON-RPC 2.0 format on port 80.
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/call",
     "params": {
       "name": "capture",
-      "arguments": {"flash": "on"}
+      "arguments": {"flash": true}
     }
   }'
 ```
@@ -108,12 +108,12 @@ curl -X POST http://192.168.1.100/ \
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/call",
     "params": {
       "name": "led",
-      "arguments": {"state": "on"}
+      "arguments": {"on": true}
     }
   }'
 ```
@@ -128,12 +128,12 @@ import base64
 
 def capture_image(esp32_ip):
     payload = {
-        "jsonrpc": "2024-11-05",
+        "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
         "params": {
             "name": "capture",
-            "arguments": {"flash": "on"}
+            "arguments": {"flash": true}
         }
     }
     
@@ -152,12 +152,12 @@ def capture_image(esp32_ip):
 
 ```powershell
 $payload = @{
-    jsonrpc = "2024-11-05"
+    jsonrpc = "2.0"
     id = 1
     method = "tools/call"
     params = @{
         name = "capture"
-        arguments = @{flash = "on"}
+        arguments = @{flash = $true}
     }
 } | ConvertTo-Json -Depth 10
 
@@ -174,7 +174,7 @@ Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $payload -Cont
 
 ## Technical Specifications
 
-- **Protocol**: Model Context Protocol 2024-11-05
+- **Protocol**: Model Context Protocol 2025-06-18
 - **Network**: HTTP server on port 80
 - **Image Format**: JPEG with base64 encoding
 - **Image Size Limit**: Under 4KB encoded (due to AI client limitations)

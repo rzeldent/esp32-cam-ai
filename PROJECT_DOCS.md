@@ -31,7 +31,7 @@ The ESP32-CAM MCP Server is a comprehensive IoT solution that transforms an ESP3
 
 - **Hardware**: ESP32-CAM with OV2640 camera sensor
 - **Framework**: Arduino/ESP-IDF via PlatformIO
-- **Protocol**: Model Context Protocol (MCP) 2024-11-05
+- **Protocol**: Model Context Protocol (MCP) 2025-06-18
 - **Networking**: WiFi with HTTP server
 - **Data Format**: JSON-RPC 2.0 with base64 image encoding (under 4KB)
 
@@ -75,7 +75,7 @@ void handle_capture_tool(const JsonObject& arguments, JsonDocument& response);
 
 ### MCP Protocol Implementation
 
-The server implements a complete MCP 2024-11-05 protocol stack:
+The server implements a complete MCP 2025-06-18 protocol stack:
 
 #### Core Methods
 

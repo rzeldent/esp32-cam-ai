@@ -1,12 +1,12 @@
 #pragma once
 
-constexpr auto MCP_PROTOCOL_VERSION = "2024-11-05";
+constexpr auto MCP_PROTOCOL_VERSION = "2025-06-18";
 constexpr auto MCP_NAME = "ESP32-CAM-AI MCP Server";
 constexpr auto MCP_VERSION = "1.0.1";
 
 // Pixel format for MCP "capture" tool photos (bounds JPEG size and memory)
 constexpr auto MCP_CAPTURE_PIXELFORMAT = PIXFORMAT_JPEG;
-// Maximum resolution for MCP "capture" tool photos (bounds JPEG size and memory)
+// Default resolution for MCP "capture" tool photos (any advertised frame size is honored)
 constexpr auto MCP_CAPTURE_FRAMESIZE = FRAMESIZE_VGA;
 // Default JPEG quality (1-100) for MCP "capture" tool photos
 constexpr auto MCP_CAPTURE_QUALITY = 20;

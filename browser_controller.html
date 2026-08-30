@@ -15,11 +15,14 @@
         .error { color: red; background: #ffe6e6; border-left: 4px solid red; }
         .success { color: green; background: #e6ffe6; border-left: 4px solid green; }
         .response { font-family: monospace; background: #f8f8f8; padding: 10px; margin: 10px 0; border-radius: 5px; max-height: 300px; overflow-y: auto; border: 1px solid #ddd; }
+        .text-return { font-family: monospace; background: #f8f8f8; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; white-space: pre-wrap; }
         .hidden { display: none; }
         .visible { display: block; }
         .url-input { width: 300px; padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
         .control-group { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 4px; }
         .control-group h3 { margin-top: 0; color: #333; }
+        .control-group label { margin-left: 10px; }
+        .control-group select, .control-group input[type="number"] { padding: 6px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -50,9 +53,20 @@
             <h3>Camera Controls</h3>
             <button onclick="ledOn()">LED On</button>
             <button onclick="ledOff()">LED Off</button>
-            <button onclick="flashCamera()">Flash Camera</button>
-            <button onclick="captureImage('off')">Capture Image (No Flash)</button>
-            <button onclick="captureImage('on')">Capture Image (With Flash)</button>
+            <button onclick="flash()">Flash</button>
+            <button onclick="captureImage()">Capture Image</button>
+            <button onclick="loadToolOptions()">Reload Options</button>
+            <br><br>
+            <label for="capture-flash">Flash:</label>
+            <input type="checkbox" id="capture-flash">
+            <label for="capture-frame-size">Frame Size:</label>
+            <select id="capture-frame-size"></select>
+            <label for="capture-quality">Quality:</label>
+            <input type="number" id="capture-quality" min="1" max="100" value="20">
+            <label for="capture-whitebalance">White Balance:</label>
+            <select id="capture-whitebalance"></select>
+            <label for="capture-pixelformat">Pixel Format:</label>
+            <select id="capture-pixelformat"></select>
         </div>
 
         <div id="status" class="status">Ready to connect...</div>
@@ -63,6 +77,11 @@
         </div>
         
         <div id="response" class="response hidden"></div>
+        
+        <div class="control-group">
+            <h3>Text</h3>
+            <div id="text-return" class="text-return hidden"></div>
+        </div>
         
         <div id="image-container" class="image-container hidden">
             <h3>Captured Image:</h3>
@@ -106,12 +125,37 @@
             const responseDiv = document.getElementById('response');
             responseDiv.textContent = JSON.stringify(response, null, 2);
             responseDiv.className = 'response visible';
+            showTextReturn(response);
+        }
+
+        // Displays the "text" content items of the response in the Text Return panel.
+        function showTextReturn(response) {
+            const el = document.getElementById('text-return');
+            let text = '';
+            if (response && response.result && response.result.content) {
+                for (const item of response.result.content) {
+                    if (item.type === 'text') {
+                        if (text) text += '\n';
+                        text += item.text;
+                    }
+                }
+            }
+            if (text) {
+                el.textContent = text;
+                el.className = 'text-return visible';
+            } else {
+                el.textContent = '';
+                el.className = 'text-return hidden';
+            }
         }
 
         function clearResponse() {
             const responseDiv = document.getElementById('response');
             responseDiv.textContent = '';
             responseDiv.className = 'response hidden';
+            const textReturn = document.getElementById('text-return');
+            textReturn.textContent = '';
+            textReturn.className = 'text-return hidden';
             updateStatus('Response cleared');
         }
 
@@ -147,7 +191,7 @@
             }
             
             const payload = {
-                jsonrpc: "2024-11-05",
+                jsonrpc: "2.0",
                 id: requestId++,
                 method: method
             };
@@ -194,7 +238,7 @@
 
         async function initialize() {
             const result = await sendMCPRequest('initialize', {
-                protocolVersion: "2024-11-05",
+                protocolVersion: "2025-06-18",
                 capabilities: {},
                 clientInfo: {
                     name: "Browser MCP Client",
@@ -211,13 +255,57 @@
             const result = await sendMCPRequest('tools/list');
             if (result) {
                 updateStatus(`Found ${result.tools?.length || 0} available tools`);
+                populateCaptureOptions(result);
+            }
+        }
+
+        // Populates the capture dropdowns from the enums advertised by tools/list,
+        // and applies the advertised defaults to the non-enum controls.
+        function populateCaptureOptions(result) {
+            const capture = result && result.tools ? result.tools.find(t => t.name === 'capture') : null;
+            if (!capture || !capture.inputSchema || !capture.inputSchema.properties) {
+                updateStatus('Capture tool not found in tools/list', true);
+                return false;
+            }
+            const props = capture.inputSchema.properties;
+            const fillEnum = (selectId, prop) => {
+                if (!prop || !Array.isArray(prop.enum)) return;
+                const select = document.getElementById(selectId);
+                select.innerHTML = '';
+                for (const value of prop.enum) {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = value;
+                    if (value === prop.default) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                }
+            };
+            fillEnum('capture-frame-size', props.frame_size);
+            fillEnum('capture-whitebalance', props.whitebalance);
+            fillEnum('capture-pixelformat', props.pixelformat);
+
+            if (props.quality && props.quality.default != null) {
+                document.getElementById('capture-quality').value = props.quality.default;
+            }
+            if (props.flash && props.flash.default != null) {
+                document.getElementById('capture-flash').checked = !!props.flash.default;
+            }
+            return true;
+        }
+
+        async function loadToolOptions() {
+            const result = await sendMCPRequest('tools/list');
+            if (result && populateCaptureOptions(result)) {
+                updateStatus('Capture options loaded from tools/list');
             }
         }
 
         async function ledOn() {
             const result = await sendMCPRequest('tools/call', {
                 name: 'led',
-                arguments: { state: 'on' }
+                arguments: { on: true }
             });
             if (result) {
                 updateStatus('LED turned on');
@@ -227,14 +315,14 @@
         async function ledOff() {
             const result = await sendMCPRequest('tools/call', {
                 name: 'led',
-                arguments: { state: 'off' }
+                arguments: { on: false }
             });
             if (result) {
                 updateStatus('LED turned off');
             }
         }
 
-        async function flashCamera() {
+        async function flash() {
             const result = await sendMCPRequest('tools/call', {
                 name: 'flash',
                 arguments: {}
@@ -258,33 +346,61 @@
             });
         }
 
-        async function captureImage(flash = 'off') {
+        async function captureImage() {
+            // Clear any previously displayed image before the new capture
+            clearCapturedImage();
+
+            const quality = parseInt(document.getElementById('capture-quality').value, 10);
             const result = await sendMCPRequest('tools/call', {
                 name: 'capture',
-                arguments: { flash: flash }
+                arguments: {
+                    flash: document.getElementById('capture-flash').checked,
+                    frame_size: document.getElementById('capture-frame-size').value,
+                    quality: isNaN(quality) ? 20 : quality,
+                    whitebalance: document.getElementById('capture-whitebalance').value,
+                    pixelformat: document.getElementById('capture-pixelformat').value
+                }
             });
 
-            if (result && result.content && result.content.length > 0) {
-                // Look for the image content in the response
+            if (result && (result.content || result.structuredContent)) {
+                // Look for the image in the content array (legacy) or in structuredContent
                 let imageContent = null;
                 let textContent = null;
                 
-                for (let i = 0; i < result.content.length; i++) {
-                    const content = result.content[i];
-                    if (content.type === 'image') {
-                        imageContent = content;
-                    } else if (content.type === 'text') {
-                        textContent = content;
+                if (result.content) {
+                    for (let i = 0; i < result.content.length; i++) {
+                        const content = result.content[i];
+                        if (content.type === 'image') {
+                            imageContent = content;
+                        } else if (content.type === 'text') {
+                            textContent = content;
+                        }
                     }
+                }
+                
+                // The server returns the image inside structuredContent
+                if (!imageContent && result.structuredContent && result.structuredContent.image) {
+                    imageContent = {
+                        data: result.structuredContent.image,
+                        format: result.structuredContent.format,
+                        width: result.structuredContent.width,
+                        height: result.structuredContent.height,
+                        mimeType: result.structuredContent.mimeType
+                    };
                 }
                 
                 if (imageContent && imageContent.data) {
                     const img = document.getElementById('captured-image');
-                    img.src = `data:${imageContent.mimeType || 'image/jpeg'};base64,${imageContent.data}`;
-                    document.getElementById('image-container').className = 'image-container visible';
-                    
-                    const statusMsg = textContent ? textContent.text : `Image captured (${imageContent.data.length} bytes base64)`;
-                    updateStatus(statusMsg);
+                    const displaySrc = renderCapturedImage(imageContent);
+                    if (displaySrc) {
+                        img.src = displaySrc;
+                        document.getElementById('image-container').className = 'image-container visible';
+                        
+                        const statusMsg = textContent ? textContent.text : `Image captured (${imageContent.data.length} bytes base64)`;
+                        updateStatus(statusMsg);
+                    } else {
+                        updateStatus(`Captured data cannot be displayed in the browser (format: ${imageContent.format || 'unknown'})`, true);
+                    }
                 } else {
                     updateStatus('Image capture succeeded but no image data found in response', true);
                 }
@@ -293,9 +409,112 @@
             }
         }
 
-        // Test CORS support on page load
+        // Clears the previously displayed captured image.
+        function clearCapturedImage() {
+            const img = document.getElementById('captured-image');
+            img.removeAttribute('src');
+            document.getElementById('image-container').className = 'image-container hidden';
+        }
+
+        // Decodes a raw (non-JPEG) capture to an RGBA canvas and returns a PNG data URL.
+        // Returns null for formats that cannot be decoded (e.g. RAW).
+        function decodeRawImage(format, width, height, bytes) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(width, height);
+            const out = imageData.data;
+            let o = 0;
+            switch (format) {
+                case 'Grayscale':
+                    for (let i = 0; i < bytes.length && o < out.length; i++) {
+                        out[o++] = bytes[i]; out[o++] = bytes[i]; out[o++] = bytes[i]; out[o++] = 255;
+                    }
+                    break;
+                case 'RGB565':
+                    for (let i = 0; i + 1 < bytes.length && o < out.length; i += 2) {
+                        const p = bytes[i] | (bytes[i + 1] << 8);
+                        out[o++] = ((p >> 11) & 0x1F) << 3;
+                        out[o++] = ((p >> 5) & 0x3F) << 2;
+                        out[o++] = (p & 0x1F) << 3;
+                        out[o++] = 255;
+                    }
+                    break;
+                case 'RGB888':
+                    for (let i = 0; i + 2 < bytes.length && o < out.length; i += 3) {
+                        out[o++] = bytes[i];
+                        out[o++] = bytes[i + 1];
+                        out[o++] = bytes[i + 2];
+                        out[o++] = 255;
+                    }
+                    break;
+                case 'RGB444':
+                    for (let i = 0; i + 1 < bytes.length && o < out.length; i += 2) {
+                        const p = bytes[i] | (bytes[i + 1] << 8);
+                        out[o++] = ((p >> 8) & 0x0F) << 4;
+                        out[o++] = ((p >> 4) & 0x0F) << 4;
+                        out[o++] = (p & 0x0F) << 4;
+                        out[o++] = 255;
+                    }
+                    break;
+                case 'RGB555':
+                    for (let i = 0; i + 1 < bytes.length && o < out.length; i += 2) {
+                        const p = bytes[i] | (bytes[i + 1] << 8);
+                        out[o++] = ((p >> 10) & 0x1F) << 3;
+                        out[o++] = ((p >> 5) & 0x1F) << 3;
+                        out[o++] = (p & 0x1F) << 3;
+                        out[o++] = 255;
+                    }
+                    break;
+                case 'YUV422':
+                    // YUYV order: Y0 U Y1 V per 4 bytes (2 pixels)
+                    for (let i = 0; i + 3 < bytes.length && o < out.length; i += 4) {
+                        const y0 = bytes[i], u = bytes[i + 1] - 128, y1 = bytes[i + 2], v = bytes[i + 3] - 128;
+                        out[o++] = yuvToR(y0, u, v); out[o++] = yuvToG(y0, u, v); out[o++] = yuvToB(y0, u, v); out[o++] = 255;
+                        out[o++] = yuvToR(y1, u, v); out[o++] = yuvToG(y1, u, v); out[o++] = yuvToB(y1, u, v); out[o++] = 255;
+                    }
+                    break;
+                case 'YUV420':
+                    // Luma plane only (grayscale approximation)
+                    for (let i = 0; i < bytes.length && o < out.length; i++) {
+                        const v = bytes[i];
+                        out[o++] = v; out[o++] = v; out[o++] = v; out[o++] = 255;
+                    }
+                    break;
+                default:
+                    return null; // RAW is sensor-specific and cannot be decoded
+            }
+            ctx.putImageData(imageData, 0, 0);
+            return canvas.toDataURL('image/png');
+        }
+
+        function yuvToR(y, u, v) { return Math.max(0, Math.min(255, Math.round(y + 1.402 * v))); }
+        function yuvToG(y, u, v) { return Math.max(0, Math.min(255, Math.round(y - 0.344 * u - 0.714 * v))); }
+        function yuvToB(y, u, v) { return Math.max(0, Math.min(255, Math.round(y + 1.772 * u))); }
+
+        // Returns a displayable data URL for a capture content item, or null if unsupported.
+        function renderCapturedImage(imageContent) {
+            const base64 = imageContent.data;
+            // JPEG (or legacy responses without a format field) can be shown directly.
+            if (imageContent.mimeType === 'image/jpeg' || imageContent.format === 'JPEG' || !imageContent.format) {
+                return `data:image/jpeg;base64,${base64}`;
+            }
+            if (!imageContent.width || !imageContent.height) {
+                return null;
+            }
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return decodeRawImage(imageContent.format, imageContent.width, imageContent.height, bytes);
+        }
+
+        // Populate capture options from tools/list on page load
         window.addEventListener('load', function() {
-            updateStatus('Page loaded. CORS headers enable direct browser access to ESP32-CAM.');
+            updateStatus('Page loaded. Loading capture options from tools/list...');
+            loadToolOptions();
         });
     </script>
 </body>
