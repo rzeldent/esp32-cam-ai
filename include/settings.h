@@ -16,7 +16,6 @@ constexpr auto MAX_MCP_REQUEST_SIZE = 16384; // 16 KB
 // Leave MCP_API_USER empty to disable authentication (open access).
 constexpr auto MCP_API_USER = "";
 constexpr auto MCP_API_PASSWORD = "";
-
-constexpr auto MCP_API_REALM = "ESP32-CAM-AI MCP";
-
-#define MCP_OTA_PASSWORD MCP_API_PASSWORD
+constexpr auto MCP_API_REALM = "ESP32-CAM-AI";
+// Optional OTA password for ArduinoOTA updates. Set to empty string to disable OTA updates.
+constexpr auto MCP_OTA_PASSWORD = "ESP32-CAM-AI"; 

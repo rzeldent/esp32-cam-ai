@@ -33,9 +33,6 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
-// WiFi connection state, updated by WiFi events
-bool wifiConnected = false;
-
 // Result of camera initialization
 esp_err_t camera_init_result = ESP_OK;
 // Temperature export (funny; has a typo!)
@@ -49,6 +46,8 @@ extern "C"
 #endif
 
 WebServer server;
+auto macAddress = String(ESP.getEfuseMac(), 16);
+auto thingName = String("esp") + "-" + macAddress;
 
 // Configured MCP API credentials from settings.h.
 static const String mcp_api_user(MCP_API_USER);
@@ -242,6 +241,37 @@ void tool_flash(JsonObject arguments, mcp_response &response)
   result_content_item["text"] = "Flash executed";
 }
 
+typedef struct frame_size_entry
+{
+    const char name[17];
+    const framesize_t frame_size;
+} frame_size_entry_t;
+
+constexpr const frame_size_entry_t frame_sizes[] = {
+    {"QQVGA (160x120)", FRAMESIZE_QQVGA},
+    {"QCIF (176x144)", FRAMESIZE_QCIF},
+    {"HQVGA (240x176)", FRAMESIZE_HQVGA},
+    {"240x240", FRAMESIZE_240X240},
+    {"QVGA (320x240)", FRAMESIZE_QVGA},
+    {"CIF (400x296)", FRAMESIZE_CIF},
+    {"HVGA (480x320)", FRAMESIZE_HVGA},
+    {"VGA (640x480)", FRAMESIZE_VGA},
+    {"SVGA (800x600)", FRAMESIZE_SVGA},
+    {"XGA (1024x768)", FRAMESIZE_XGA},
+    {"HD (1280x720)", FRAMESIZE_HD},
+    {"SXGA (1280x1024)", FRAMESIZE_SXGA},
+    {"UXGA (1600x1200)", FRAMESIZE_UXGA}};
+
+const framesize_t lookup_frame_size(const char *pin)
+{
+    // Lookup table for the frame name to framesize_t
+    for (const auto &entry : frame_sizes)
+        if (strncmp(entry.name, pin, sizeof(entry.name)) == 0)
+            return entry.frame_size;
+
+    return FRAMESIZE_INVALID;
+}
+
 void tool_capture(JsonObject arguments, mcp_response &response)
 {
   if (camera_init_result != ESP_OK)
@@ -322,11 +352,12 @@ void tool_wifi_status(mcp_response &response)
   result_content_item["type"] = "text";
 
   auto status_text = String();
-  status_text += "IP Address: " + WiFi.localIP().toString() + "\n";
-  status_text += "Signal Strength: " + String(WiFi.RSSI()) + " dBm\n";
-  status_text += "MAC Address: " + WiFi.macAddress() + "\n";
-  status_text += "Gateway: " + WiFi.gatewayIP().toString() + "\n";
-  status_text += "DNS: " + WiFi.dnsIP().toString() + "\n";
+  status_text.reserve(256); // Pre-allocate to avoid repeated reallocations
+  status_text += "IP Address: " + WiFi.localIP().toString() + "\n"
+                 "Signal Strength: " + String(WiFi.RSSI()) + " dBm\n"
+                 "MAC Address: " + WiFi.macAddress() + "\n"
+                 "Gateway: " + WiFi.gatewayIP().toString() + "\n"
+                 "DNS: " + WiFi.dnsIP().toString() + "\n";
   result_content_item["text"] = status_text;
 }
 
@@ -337,23 +368,22 @@ void tool_system_status(mcp_response &response)
   auto result_content_item = result_content.add<JsonObject>();
   result_content_item["type"] = "text";
 
-  // Get the tem
-
-  auto status_text = String("System Status:\n");
-  status_text += "Uptime: " + String(millis() / 1000) + " seconds\n";
-  status_text += "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n";
-  status_text += "Min Free Heap: " + String(ESP.getMinFreeHeap()) + " bytes\n";
-  status_text += "Max Alloc Heap: " + String(ESP.getMaxAllocHeap()) + " bytes\n";
-  status_text += "CPU Frequency: " + String(getCpuFrequencyMhz()) + " MHz\n";
-  status_text += "Flash Size: " + String(ESP.getFlashChipSize()) + " bytes\n";
-  status_text += "Flash Speed: " + String(ESP.getFlashChipSpeed()) + " Hz\n";
-  status_text += "Sketch Size: " + String(ESP.getSketchSize()) + " bytes\n";
-  status_text += "Free Sketch Space: " + String(ESP.getFreeSketchSpace()) + " bytes\n";
-  status_text += "SDK Version: " + String(ESP.getSdkVersion()) + "\n";
-  status_text += "Reset Reason: " + String(esp_reset_reason()) + "\n";
-  status_text += "Camera initialized: " + String(camera_init_result == ESP_OK ? "Yes" : "No (code = 0x" + String(camera_init_result, 16) + ")") + "\n";
   auto internal_temperature = (temprature_sens_read() - 32) / 1.8;
-  status_text += "Internal Temperature: " + String(internal_temperature, 2) + " °C\n";
+  auto status_text = String();
+  status_text.reserve(1024); // Pre-allocate to avoid repeated reallocations
+  status_text += "Uptime: " + String(millis() / 1000) + " seconds\n"
+                 "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n"
+                 "Min Free Heap: " + String(ESP.getMinFreeHeap()) + " bytes\n"
+                 "Max Alloc Heap: " + String(ESP.getMaxAllocHeap()) + " bytes\n"
+                 "CPU Frequency: " + String(getCpuFrequencyMhz()) + " MHz\n"
+                 "Flash Size: " + String(ESP.getFlashChipSize()) + " bytes\n"
+                 "Flash Speed: " + String(ESP.getFlashChipSpeed()) + " Hz\n"
+                 "Sketch Size: " + String(ESP.getSketchSize()) + " bytes\n"
+                 "Free Sketch Space: " + String(ESP.getFreeSketchSpace()) + " bytes\n"
+                 "SDK Version: " + String(ESP.getSdkVersion()) + "\n"
+                 "Reset Reason: " + String(esp_reset_reason()) + "\n"
+                 "Camera initialized: " + String(camera_init_result == ESP_OK ? "Yes" : "No (code = 0x" + String(camera_init_result, 16) + ")") + "\n"
+                 "Internal Temperature: " + String(internal_temperature, 2) + " °C\n";
   result_content_item["text"] = status_text;
 }
 
@@ -491,32 +521,6 @@ void handleRoot()
   server.send(http_code, content_type, body);
 }
 
-// WiFi event handlers
-void onWiFiEvent(WiFiEvent_t event)
-{
-  switch (event)
-  {
-  case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-    log_d("WiFi connected to SSID: %s", WiFi.SSID().c_str());
-    break;
-
-  case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-    log_d("WiFi got IP address: %s", WiFi.localIP().toString().c_str());
-    wifiConnected = true;
-    break;
-
-  case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-    log_d("WiFi disconnected!");
-    wifiConnected = false;
-    break;
-
-  case ARDUINO_EVENT_WIFI_STA_LOST_IP:
-    log_d("WiFi lost IP address");
-    wifiConnected = false;
-    break;
-  }
-}
-
 void setup()
 {
   // Disable brownout
@@ -533,9 +537,6 @@ void setup()
   log_d("CPU Freq: %d Mhz", getCpuFrequencyMhz());
   log_d("Free heap: %d bytes", ESP.getFreeHeap());
 
-  // Setup WiFi event handlers
-  WiFi.onEvent(onWiFiEvent);
-
   // Configure WiFi for automatic reconnection on disconnect
   WiFi.setAutoReconnect(true); // Auto-reconnect to the saved AP
   WiFi.persistent(true);       // Save WiFi config to flash
@@ -549,13 +550,10 @@ void setup()
     ESP.restart();
   }
 
-  wifiConnected = true; // Set initial status
   log_i("Local IP address: %s", WiFi.localIP().toString().c_str());
   log_d("Signal strength: %d dBm", WiFi.RSSI());
 
-  auto hostName = "esp32-" + WiFi.macAddress() + ".local";
-  hostName.replace(":", "");
-  hostName.toLowerCase();
+  auto hostName = "esp32-" + macAddress + ".local";
   log_i("mDNS hostname: %s", hostName.c_str());
   MDNS.begin(hostName.c_str());
   MDNS.addService("_jsonrpc", "_tcp", 80);
@@ -585,7 +583,7 @@ void setup()
 void loop()
 {
   // Handle web server requests only if WiFi is connected
-  if (wifiConnected)
+  if (WiFi.status() == WL_CONNECTED)
     server.handleClient();
 
   // Handle OTA (works even with WiFi issues for recovery)
