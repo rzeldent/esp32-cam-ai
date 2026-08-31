@@ -10,7 +10,7 @@ jobs:
         environment: [esp32cam-release, esp32cam-debug]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: 'true'      
     
