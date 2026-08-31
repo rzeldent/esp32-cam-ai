@@ -5,13 +5,13 @@ $esp32_url = "http://esp32-7c9ebdf16a10.local"
 
 # Capture image with flash
 $capture_request = @{
-    jsonrpc = "2024-11-05"
+    jsonrpc = "2.0"
     id = 1
     method = "tools/call"
     params = @{
         name = "capture"
         arguments = @{
-            flash = "on"
+            flash = $true
         }
     }
 } | ConvertTo-Json -Depth 10

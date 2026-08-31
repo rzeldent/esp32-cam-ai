@@ -3,6 +3,10 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+#include <stdexcept>
+#include <string>
+#include <tuple>
+
 enum error_code
 {
     parse_error = -32700,        // Invalid JSON
@@ -17,7 +21,7 @@ enum error_code
 class mcp_exception : public std::runtime_error
 {
 public:
-    mcp_exception(error_code code, const String &message);
+    mcp_exception(error_code code, const std::string &message);
     error_code code() const
     {
         return code_;
@@ -30,42 +34,30 @@ private:
 class mcp_request
 {
 public:
-    mcp_request(const String &request);
+    mcp_request(const std::string &request);
 
-    const String &jsonrpc() const
-    {
-        return jsonrpc_;
-    }
-    const JsonVariant &id() const
-    {
-        return id_;
-    }
-    const String &method() const
-    {
-        return method_;
-    }
-    const JsonObject &params() const
-    {
-        return params_;
-    }
+    const std::string &jsonrpc() const { return jsonrpc_; }
+    const JsonVariant &id() const { return id_; }
+    const std::string &method() const { return method_; }
+    const JsonObject &params() const { return params_; }
 
 private:
     JsonDocument doc_;
-    String jsonrpc_;
+    std::string jsonrpc_;
     JsonVariant id_;
-    String method_;
+    std::string method_;
     JsonObject params_;
 };
 
 struct mcp_response
 {
-    mcp_response(const String &jsonrpc = "2.0");
+    mcp_response(const std::string &jsonrpc = "2.0");
 
     mcp_response &set_id(const JsonVariant &id);
     JsonObject create_error();
     JsonObject create_result();
 
-    std::tuple<int, const char*, String> get_http_response() const;
+    std::tuple<int, const char *, std::string> get_http_response() const;
 
 private:
     JsonDocument doc_;

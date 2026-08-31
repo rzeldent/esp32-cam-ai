@@ -57,11 +57,11 @@ Write-Host ""
 Write-Host "2. Testing POST request with CORS headers:" -ForegroundColor Yellow
 
 $post_request = @{
-    jsonrpc = "2024-11-05"
+    jsonrpc = "2.0"
     id = 1
     method = "initialize"
     params = @{
-        protocolVersion = "2024-11-05"
+        protocolVersion = "2025-06-18"
         capabilities = @{}
         clientInfo = @{
             name = "CORS Test Client"

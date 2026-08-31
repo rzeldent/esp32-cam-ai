@@ -40,9 +40,10 @@ WIFI_PASSWORD="YourPassword"
 
 | Tool | Parameters | Description |
 |------|------------|-------------|
-| `led` | `state`: "on"/"off" | Control built-in LED |
+| `led` | `on`: true/false | Control built-in LED |
 | `flash` | `duration`: 5-100ms | Trigger camera flash |
-| `capture` | `flash`: "on"/"off" | Take photo with optional flash |
+| `capture` | `flash`: true/false, `frame_size`, `quality`, `whitebalance`, `pixelformat` | Take photo with optional flash |
+| `gpio` | `pin`: 2,12,13,14,15; `mode`: di/ai/do/ao; `value`: bool or 0-100 (float, sub-1% ok) | Read/write GPIO pins |
 | `wifi_status` | None | Get network information |
 | `system_status` | None | Get system diagnostics |
 
@@ -103,11 +104,11 @@ The `system_status` tool returns comprehensive diagnostic information about the 
 ```powershell
 # Initialize MCP connection
 $init = @{
-    jsonrpc = "2024-11-05"
+    jsonrpc = "2.0"
     id = 1
     method = "initialize"
     params = @{
-        protocolVersion = "2024-11-05"
+        protocolVersion = "2025-06-18"
         capabilities = @{}
         clientInfo = @{
             name = "PowerShell Client"
@@ -120,7 +121,7 @@ Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $init -Content
 
 # List available tools
 $listTools = @{
-    jsonrpc = "2024-11-05"
+    jsonrpc = "2.0"
     id = 2
     method = "tools/list"
 } | ConvertTo-Json
@@ -129,28 +130,45 @@ Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $listTools -Co
 
 # Turn on LED
 $ledOn = @{
-    jsonrpc = "2024-11-05"
+    jsonrpc = "2.0"
     id = 3
     method = "tools/call"
     params = @{
         name = "led"
         arguments = @{
-            state = "on"
+            on = $true
         }
     }
 } | ConvertTo-Json -Depth 10
 
 Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $ledOn -ContentType "application/json"
 
+# Set GPIO2 as digital output HIGH
+$gpio = @{
+    jsonrpc = "2.0"
+    id = 4
+    method = "tools/call"
+    params = @{
+        name = "gpio"
+        arguments = @{
+            pin = 2
+            mode = "do"
+            value = $true
+        }
+    }
+} | ConvertTo-Json -Depth 10
+
+Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $gpio -ContentType "application/json"
+
 # Capture image with flash
 $capture = @{
-    jsonrpc = "2024-11-05"
-    id = 4
+    jsonrpc = "2.0"
+    id = 5
     method = "tools/call"
     params = @{
         name = "capture"
         arguments = @{
-            flash = "on"
+            flash = $true
         }
     }
 } | ConvertTo-Json -Depth 10
@@ -172,11 +190,11 @@ if ($response.result.content[1].type -eq "image") {
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 1,
     "method": "initialize",
     "params": {
-      "protocolVersion": "2024-11-05",
+      "protocolVersion": "2025-06-18",
       "capabilities": {},
       "clientInfo": {
         "name": "curl Client",
@@ -189,7 +207,7 @@ curl -X POST http://192.168.1.100/ \
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 2,
     "method": "tools/list"
   }'
@@ -198,13 +216,13 @@ curl -X POST http://192.168.1.100/ \
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 3,
     "method": "tools/call",
     "params": {
       "name": "led",
       "arguments": {
-        "state": "on"
+        "on": true
       }
     }
   }'
@@ -213,7 +231,7 @@ curl -X POST http://192.168.1.100/ \
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 4,
     "method": "tools/call",
     "params": {
@@ -228,13 +246,13 @@ curl -X POST http://192.168.1.100/ \
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 5,
     "method": "tools/call",
     "params": {
       "name": "capture",
       "arguments": {
-        "flash": "on"
+        "flash": true
       }
     }
   }'
@@ -243,7 +261,7 @@ curl -X POST http://192.168.1.100/ \
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 6,
     "method": "tools/call",
     "params": {
@@ -256,12 +274,46 @@ curl -X POST http://192.168.1.100/ \
 curl -X POST http://192.168.1.100/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2024-11-05",
+    "jsonrpc": "2.0",
     "id": 7,
     "method": "tools/call",
     "params": {
       "name": "system_status",
       "arguments": {}
+    }
+  }'
+
+# Set GPIO2 as digital output HIGH
+curl -X POST http://192.168.1.100/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 8,
+    "method": "tools/call",
+    "params": {
+      "name": "gpio",
+      "arguments": {
+        "pin": 2,
+        "mode": "do",
+        "value": true
+      }
+    }
+  }'
+
+# Set GPIO4 to 0.5% PWM duty (analog output; float accepted for sub-1%)
+curl -X POST http://192.168.1.100/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 9,
+    "method": "tools/call",
+    "params": {
+      "name": "gpio",
+      "arguments": {
+        "pin": 4,
+        "mode": "ao",
+        "value": 0.5
+      }
     }
   }'
 ```
@@ -281,7 +333,7 @@ class ESP32CamClient:
     
     def _make_request(self, method, params=None):
         payload = {
-            "jsonrpc": "2024-11-05",
+            "jsonrpc": "2.0",
             "id": self.request_id,
             "method": method
         }
@@ -294,7 +346,7 @@ class ESP32CamClient:
     
     def initialize(self):
         return self._make_request("initialize", {
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": "2025-06-18",
             "capabilities": {},
             "clientInfo": {
                 "name": "Python Client",
@@ -320,7 +372,7 @@ class ESP32CamClient:
     def capture_image(self, use_flash=False, save_path=None):
         result = self._make_request("tools/call", {
             "name": "capture",
-            "arguments": {"flash": "on" if use_flash else "off"}
+            "arguments": {"flash": True if use_flash else False}
         })
         
         if "result" in result and len(result["result"]["content"]) > 1:
@@ -348,6 +400,15 @@ class ESP32CamClient:
             "name": "system_status",
             "arguments": {}
         })
+    
+    def gpio(self, pin, mode, value=None):
+        arguments = {"pin": pin, "mode": mode}
+        if value is not None:
+            arguments["value"] = value
+        return self._make_request("tools/call", {
+            "name": "gpio",
+            "arguments": arguments
+        })
 
 # Usage example
 if __name__ == "__main__":
@@ -372,6 +433,19 @@ if __name__ == "__main__":
     # Flash the camera
     print("Flashing camera...")
     cam.flash_control(75)
+    
+    # Set GPIO2 as digital output HIGH
+    print("\nSetting GPIO2 HIGH...")
+    cam.gpio(2, "do", True)
+    
+    # Set GPIO4 to 0.5% PWM duty (analog output; float accepted for sub-1%)
+    print("\nSetting GPIO4 to 0.5% duty...")
+    cam.gpio(4, "ao", 0.5)
+    
+    # Read GPIO13 as digital input
+    print("Reading GPIO13...")
+    gpio_result = cam.gpio(13, "di")
+    print(f"GPIO13 value: {gpio_result.get('result', {}).get('structuredContent', {}).get('value')}")
     
     # Capture image
     print("Capturing image...")
@@ -492,12 +566,12 @@ rest_command:
       Content-Type: "application/json"
     payload: |
       {
-        "jsonrpc": "2024-11-05",
+        "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
         "params": {
           "name": "capture",
-          "arguments": {"flash": "on"}
+          "arguments": {"flash": true}
         }
       }
 ```
@@ -599,7 +673,7 @@ Create `.vscode/tasks.json` for common operations:
         "-X", "POST",
         "http://192.168.1.100/",
         "-H", "Content-Type: application/json",
-        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"capture\",\"arguments\":{\"flash\":\"on\"}}}"
+        "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"capture\",\"arguments\":{\"flash\":true}}}"
       ],
       "group": "build",
       "presentation": {
@@ -618,7 +692,7 @@ Create `.vscode/tasks.json` for common operations:
         "-X", "POST",
         "http://192.168.1.100/",
         "-H", "Content-Type: application/json",
-        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"led\",\"arguments\":{\"state\":\"on\"}}}"
+        "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"led\",\"arguments\":{\"on\":true}}}"
       ],
       "group": "build"
     },
@@ -630,7 +704,7 @@ Create `.vscode/tasks.json` for common operations:
         "-X", "POST",
         "http://192.168.1.100/",
         "-H", "Content-Type: application/json",
-        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"led\",\"arguments\":{\"state\":\"off\"}}}"
+        "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"led\",\"arguments\":{\"state\":\"off\"}}}"
       ],
       "group": "build"
     },
@@ -642,7 +716,7 @@ Create `.vscode/tasks.json` for common operations:
         "-X", "POST", 
         "http://192.168.1.100/",
         "-H", "Content-Type: application/json",
-        "-d", "{\"jsonrpc\":\"2024-11-05\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"system_status\",\"arguments\":{}}}"
+        "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"system_status\",\"arguments\":{}}}"
       ],
       "group": "test"
     }
@@ -660,11 +734,11 @@ Create `.vscode/esp32cam.code-snippets`:
     "prefix": "esp32-mcp",
     "body": [
       "{",
-      "  \"jsonrpc\": \"2024-11-05\",",
+      "  \"jsonrpc\": \"2.0\",",
       "  \"id\": ${1:1},",
       "  \"method\": \"tools/call\",",
       "  \"params\": {",
-      "    \"name\": \"${2|led,flash,capture,wifi_status,system_status|}\",",
+      "    \"name\": \"${2|led,flash,capture,gpio,wifi_status,system_status|}\",",
       "    \"arguments\": {",
       "      $3",
       "    }",
@@ -677,13 +751,13 @@ Create `.vscode/esp32cam.code-snippets`:
     "prefix": "esp32-led",
     "body": [
       "{",
-      "  \"jsonrpc\": \"2024-11-05\",",
+      "  \"jsonrpc\": \"2.0\",",
       "  \"id\": ${1:1},",
       "  \"method\": \"tools/call\",",
       "  \"params\": {",
       "    \"name\": \"led\",",
       "    \"arguments\": {",
-      "      \"state\": \"${2|on,off|}\"",
+      "      \"on\": ${2|true,false|}",
       "    }",
       "  }",
       "}"
@@ -694,13 +768,13 @@ Create `.vscode/esp32cam.code-snippets`:
     "prefix": "esp32-capture",
     "body": [
       "{",
-      "  \"jsonrpc\": \"2024-11-05\",",
+      "  \"jsonrpc\": \"2.0\",",
       "  \"id\": ${1:1},",
       "  \"method\": \"tools/call\",",
       "  \"params\": {",
       "    \"name\": \"capture\",",
       "    \"arguments\": {",
-      "      \"flash\": \"${2|on,off|}\"",
+      "      \"flash\": ${2|true,false|}",
       "    }",
       "  }",
       "}"
@@ -722,11 +796,11 @@ POST http://192.168.1.100/
 Content-Type: application/json
 
 {
-  "jsonrpc": "2024-11-05",
+  "jsonrpc": "2.0",
   "id": 1,
   "method": "initialize",
   "params": {
-    "protocolVersion": "2024-11-05",
+    "protocolVersion": "2025-06-18",
     "capabilities": {},
     "clientInfo": {
       "name": "VS Code REST Client",
@@ -740,7 +814,7 @@ POST http://192.168.1.100/
 Content-Type: application/json
 
 {
-  "jsonrpc": "2024-11-05",
+  "jsonrpc": "2.0",
   "id": 2,
   "method": "tools/list"
 }
@@ -750,13 +824,13 @@ POST http://192.168.1.100/
 Content-Type: application/json
 
 {
-  "jsonrpc": "2024-11-05",
+  "jsonrpc": "2.0",
   "id": 3,
   "method": "tools/call",
   "params": {
     "name": "led",
     "arguments": {
-      "state": "on"
+      "on": true
     }
   }
 }
@@ -766,13 +840,13 @@ POST http://192.168.1.100/
 Content-Type: application/json
 
 {
-  "jsonrpc": "2024-11-05",
+  "jsonrpc": "2.0",
   "id": 4,
   "method": "tools/call",
   "params": {
     "name": "capture",
     "arguments": {
-      "flash": "on"
+      "flash": true
     }
   }
 }
@@ -782,7 +856,7 @@ POST http://192.168.1.100/
 Content-Type: application/json
 
 {
-  "jsonrpc": "2024-11-05",
+  "jsonrpc": "2.0",
   "id": 5,
   "method": "tools/call",
   "params": {

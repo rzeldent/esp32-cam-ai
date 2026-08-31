@@ -7,7 +7,7 @@
 [![Platform: ESP32-CAM](https://img.shields.io/badge/Platform-ESP32--CAM-blue)](https://www.espressif.com/)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-00979D)](https://www.arduino.cc/)
 [![Language: C++](https://img.shields.io/badge/Language-C%2B%2B-00599C)](https://isocpp.org/)
-[![MCP: 2024-11-05](https://img.shields.io/badge/MCP-2024--11--05-blueviolet)](https://modelcontextprotocol.io/)
+[![MCP: 2025-06-18](https://img.shields.io/badge/MCP-2025--06--18-blueviolet)](https://modelcontextprotocol.io/)
 [![Release](https://img.shields.io/github/v/release/rzeldent/esp32-cam-ai)](https://github.com/rzeldent/esp32-cam-ai/releases)
 
 [<img src="assets/images/esp32-cam-ai.png" alt="ESP32-CAM-AI" width="320">](assets/images/esp32-cam-ai.png)
@@ -25,6 +25,7 @@ Brief: **Use Copilot or other AI digital assistants, like AI-Toolkit (in VSCode)
 - **LED Control**: Turn the ESP32-CAM's built-in LED on/off
 - **Flash Control**: Trigger camera flash with configurable duration (5-100ms)
 - **Camera Capture**: Take photos with optional flash support (optimized for <4KB base64)
+- **GPIO Control**: Read/write GPIO pins (digital/analog in/out) via the `gpio` tool
 - **Real-time Control**: Instant response to MCP tool calls
 
 ### System Monitoring
@@ -43,7 +44,7 @@ Brief: **Use Copilot or other AI digital assistants, like AI-Toolkit (in VSCode)
 
 ### MCP Protocol Support
 
-- **Standard Compliance**: Full MCP 2024-11-05 protocol implementation
+- **Standard Compliance**: Full MCP 2025-06-18 protocol implementation
 - **Tool Schema**: Proper JSON schema validation for all tools
 - **Error Handling**: Comprehensive error reporting with proper codes
 - **Notifications**: Support for `notifications/initialized`
@@ -182,7 +183,7 @@ Controls the ESP32-CAM's built-in LED state.
 
 **Parameters:**
 
-- `state` (required): `"on"` or `"off"`
+- `on` (required): `true` or `false`
 
 **Example:**
 
@@ -192,7 +193,7 @@ Controls the ESP32-CAM's built-in LED state.
   "method": "tools/call",
   "params": {
     "name": "led",
-    "arguments": {"state": "on"}
+    "arguments": {"on": true}
   }
 }
 ```
@@ -218,13 +219,59 @@ Triggers the camera flash for a specified duration.
 }
 ```
 
+### GPIO Control
+
+Controls the GPIO pins of the ESP32-CAM. Valid pins: **2, 12, 13, 14, 15**.
+
+**Parameters:**
+
+- `pin` (required): GPIO pin number. Valid pins: `2`, `12`, `13`, `14`, `15`
+- `mode` (required): One of:
+  - `di` (digital input) — returns `value` `true`/`false` from the pin's logical level
+  - `ai` (analog input) — returns `value` `0-100` (percentage of the calibrated max input, via `analogReadMilliVolts`)
+  - `do` (digital output) — sets `value` `true`/`false` on the pin (logical level)
+  - `ao` (analog output) — sets `value` `0-100` (PWM duty cycle percentage; float accepted for sub-1% duty, e.g. `0.5` = 0.5%)
+- `value` (required for output modes): boolean for `do`, `0-100` number (float allowed) for `ao`
+
+**Notes:**
+
+- Analog input pins are ADC2 channels, which are unavailable while Wi-Fi is active (readings may be 0).
+
+**Examples:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "gpio",
+    "arguments": {"pin": 2, "mode": "do", "value": true}
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "gpio",
+    "arguments": {"pin": 13, "mode": "ao", "value": 75}
+  }
+}
+```
+
 ### Camera Capture
 
 Captures a photo from the ESP32-CAM sensor.
 
 **Parameters:**
 
-- `flash` (optional): `"on"` or `"off"` - Use flash during capture
+- `flash` (optional): `true` or `false` - Use flash during capture
+- `frame_size` (optional): Resolution, e.g. `VGA (640x480)`
+- `quality` (optional): JPEG quality 1-100 (default: 20)
+- `whitebalance` (optional): `Auto`, `Sunny`, `Cloudy`, `Office`, or `Home`
+- `pixelformat` (optional): e.g. `JPEG`, `RGB565`, `Grayscale`
 
 **Response:**
 
@@ -240,7 +287,7 @@ Captures a photo from the ESP32-CAM sensor.
   "method": "tools/call",
   "params": {
     "name": "capture",
-    "arguments": {"flash": "on"}
+    "arguments": {"flash": true}
   }
 }
 ```
@@ -306,7 +353,7 @@ Provides comprehensive system diagnostics and health monitoring.
 
 ```powershell
 # Capture image with flash
-$body = '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "capture", "arguments": {"flash": "on"}}}'
+$body = '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "capture", "arguments": {"flash": true}}}'
 Invoke-RestMethod -Uri "http://192.168.1.132/" -Method Post -Body $body -ContentType "application/json"
 ```
 
@@ -537,7 +584,7 @@ def capture_image(esp32_ip, use_flash=False):
         "method": "tools/call",
         "params": {
             "name": "capture",
-            "arguments": {"flash": "on" if use_flash else "off"}
+            "arguments": {"flash": True if use_flash else False}
         }
     }
     
@@ -556,8 +603,38 @@ def capture_image(esp32_ip, use_flash=False):
     else:
         print(f"Error: {data.get('error', {}).get('message', 'Unknown error')}")
 
+def gpio_control(esp32_ip, pin, mode, value=None):
+    url = f"http://{esp32_ip}/"
+    arguments = {"pin": pin, "mode": mode}
+    if value is not None:
+        arguments["value"] = value
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "gpio",
+            "arguments": arguments
+        }
+    }
+
+    response = requests.post(url, json=payload)
+    data = response.json()
+
+    if "result" in data:
+        sc = data["result"].get("structuredContent", {})
+        print(f"GPIO{pin} ({mode}) value: {sc.get('value')}")
+        return sc
+    else:
+        print(f"Error: {data.get('error', {}).get('message', 'Unknown error')}")
+        return None
+
 # Usage
 capture_image("192.168.1.132", use_flash=True)
+gpio_control("192.168.1.132", 2, "do", True)   # GPIO2 -> HIGH
+gpio_control("192.168.1.132", 13, "ao", 75)    # GPIO13 -> 75% PWM
+gpio_control("192.168.1.132", 13, "di")        # Read GPIO13
 ```
 
 #### Node.js Integration
@@ -573,7 +650,7 @@ async function captureImage(esp32IP, useFlash = false) {
         method: "tools/call",
         params: {
             name: "capture",
-            arguments: { flash: useFlash ? "on" : "off" }
+            arguments: { flash: useFlash }
         }
     };
     
