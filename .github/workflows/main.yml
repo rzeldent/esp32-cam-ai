@@ -44,7 +44,7 @@ jobs:
           echo "Ref: ${{ github.ref }}" >> artifacts/${{ matrix.environment }}/build-info.txt
 
       - name: Upload firmwares
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.environment }}
           path: artifacts/${{ matrix.environment }}/*.*
