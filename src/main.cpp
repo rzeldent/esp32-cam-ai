@@ -5,6 +5,9 @@
 #include <ArduinoOTA.h>
 #include <esp_camera.h>
 #include <soc/rtc_cntl_reg.h>
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include <map>
 #include <string>
 
@@ -87,11 +90,22 @@ static const std::map<int, uint8_t> gpio_pwm_channels = {
     {33, 9}}; // RED LED
 
 // PWM settings for analog output mode (duty cycle given as a percentage).
-static constexpr uint32_t GPIO_PWM_FREQ = 5000;    // Hz
-static constexpr uint8_t GPIO_PWM_RESOLUTION = 8;  // bits -> duty 0..255
-static constexpr uint32_t GPIO_PWM_MAX_DUTY = 255; // (1 << resolution) - 1
+// 13-bit resolution (duty 0..8191) makes sub-1% values usable: 0.1% -> ~8 steps.
+// 13 bits is the max resolution that still supports 5 kHz on the 80 MHz APB clock
+// (max freq = 80 MHz / 2^13 ~ 9.7 kHz; 14 bits would cap at ~4.8 kHz).
+static constexpr uint32_t GPIO_PWM_FREQ = 5000;                          // Hz
+static constexpr uint8_t GPIO_PWM_RESOLUTION = 13;                       // bits -> duty 0..8191
+static constexpr uint32_t GPIO_PWM_MAX_DUTY = (1U << GPIO_PWM_RESOLUTION) - 1; // 8191
 // Full-scale ADC reference (mV) used to express an analog input as a percentage.
 static constexpr uint32_t GPIO_ADC_REFERENCE_MV = 3300;
+
+// Formats a float for display, dropping trailing zeros (e.g. "0.5", "1", "12.34").
+static std::string format_float(float value)
+{
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%g", value);
+  return std::string(buf);
+}
 
 // Minimal base64 encoder (RFC 4648), used to carry the SRTP master key and salt in the "a=crypto" attribute.
 std::string base64_encode(const uint8_t *data, size_t len)
@@ -126,21 +140,32 @@ extern "C"
 #endif
 
 WebServer server;
-auto macAddress = String(ESP.getEfuseMac(), 16);
-auto thingName = String("esp") + "-" + macAddress;
+// Hex-encoded MAC address (Arduino boundary: ESP.getEfuseMac() -> hex String) used for a unique mDNS hostname.
+auto macAddress = std::string(String(ESP.getEfuseMac(), 16).c_str());
+auto thingName = "esp-" + macAddress;
 
 // Configured MCP API credentials from settings.h.
-static const String mcp_api_user(MCP_API_USER);
-static const String mcp_api_password(MCP_API_PASSWORD);
+static const std::string mcp_api_user(MCP_API_USER);
+static const std::string mcp_api_password(MCP_API_PASSWORD);
 
 // Generic Accept-Encoding check
 static bool client_accepts(const char *encoding)
 {
   if (!server.hasHeader("Accept-Encoding"))
     return false;
-  auto accept = server.header("Accept-Encoding");
-  accept.toLowerCase();
-  return accept.indexOf(encoding) >= 0;
+  auto accept = std::string(server.header("Accept-Encoding").c_str());
+  std::transform(accept.begin(), accept.end(), accept.begin(), ::tolower);
+  return accept.find(encoding) != std::string::npos;
+}
+
+// Strips leading/trailing ASCII whitespace (mirrors Arduino String::trim()).
+static std::string trim_whitespace(const std::string &value)
+{
+  auto first = value.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos)
+    return "";
+  auto last = value.find_last_not_of(" \t\r\n");
+  return value.substr(first, last - first + 1);
 }
 
 // Returns true if the request is authorized. Authentication is disabled when
@@ -148,29 +173,28 @@ static bool client_accepts(const char *encoding)
 // credentials (Authorization: Basic base64(user:password)).
 static bool request_authorized()
 {
-  if (mcp_api_user.length() == 0)
+  if (mcp_api_user.empty())
     return true;
 
-  auto auth = server.header("Authorization");
-  if (!auth.startsWith("Basic "))
+  auto auth = std::string(server.header("Authorization").c_str());
+  if (auth.rfind("Basic ", 0) != 0)
     return false;
 
-  auto encoded = auth.substring(6);
-  encoded.trim();
+  auto encoded = trim_whitespace(auth.substr(6));
 
   auto expected = mcp_api_user + ":" + mcp_api_password;
   auto decoded_len = base64_decode_expected_len(encoded.length()) + 1;
   std::unique_ptr<char[]> decoded(new char[decoded_len]);
-  auto len = base64_decode_chars(encoded.c_str(), encoded.length(), decoded.get());
+  auto len = base64_decode_chars(encoded.c_str(), static_cast<int>(encoded.length()), decoded.get());
   if (len < 0)
     return false;
   decoded[len] = '\0';
-  return String(decoded.get()) == expected;
+  return expected == decoded.get();
 }
 
 #ifdef ENABLE_GZIP
 // Optional deflate (zlib) compression using miniz. Returns true on success and writes binary data to output.
-static bool deflate_compress(const String &input, String &output)
+static bool deflate_compress(const std::string &input, std::string &output)
 {
   auto src = reinterpret_cast<const unsigned char *>(input.c_str());
   auto src_len = static_cast<mz_ulong>(input.length());
@@ -183,7 +207,7 @@ static bool deflate_compress(const String &input, String &output)
   if (mz_compress2(buf.get(), &out_len, src, src_len, MZ_DEFAULT_LEVEL) != MZ_OK)
     return false;
 
-  output = String(reinterpret_cast<const char *>(buf.get()), static_cast<unsigned int>(out_len));
+  output.assign(reinterpret_cast<const char *>(buf.get()), static_cast<size_t>(out_len));
   return true;
 }
 #endif
@@ -262,7 +286,7 @@ void handle_tools_list(mcp_response &response)
   gpio_tool
       .number("pin", "GPIO pin to control. Valid pins: 2, 4, 12, 13, 14, 15, 33")
       .enum_string("mode", "Pin mode", {"di", "ai", "do", "ao"})
-      .any("value", "Required for output modes. do: true (HIGH) or false (LOW). ao: 0-100 (duty cycle percentage).")
+      .any("value", "Required for output modes. do: true (HIGH) or false (LOW). ao: 0-100 (duty cycle percentage; float accepted, e.g. 0.5 = 0.5%).")
       .required("pin")
       .required("mode");
 }
@@ -297,7 +321,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   auto capture_framesize = MCP_CAPTURE_FRAMESIZE;
   if (!arguments["frame_size"].isNull())
   {
-    auto frame_size_it = frame_sizes.find(arguments["frame_size"].as<const char *>());
+    auto frame_size_it = frame_sizes.find(arguments["frame_size"].as<std::string>());
     if (frame_size_it == frame_sizes.end())
     {
       std::string valid_options;
@@ -334,7 +358,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   auto capture_whitebalance = MCP_CAPTURE_WB_MODE;
   if (!arguments["whitebalance"].isNull())
   {
-    auto wb_mode_it = camera_wb_modes.find(arguments["whitebalance"].as<const char *>());
+    auto wb_mode_it = camera_wb_modes.find(arguments["whitebalance"].as<std::string>());
     if (wb_mode_it == camera_wb_modes.end())
     {
       std::string valid_options;
@@ -356,7 +380,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   auto capture_pixelformat = MCP_CAPTURE_PIXELFORMAT;
   if (!arguments["pixelformat"].isNull())
   {
-    auto pixel_format_it = pixel_formats.find(arguments["pixelformat"].as<const char *>());
+    auto pixel_format_it = pixel_formats.find(arguments["pixelformat"].as<std::string>());
     if (pixel_format_it == pixel_formats.end())
     {
       std::string valid_options;
@@ -585,7 +609,7 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
       .message("Mode is required. Valid modes: di (digital input), ai (analog input), do (digital output), ao (analog output).");
     return;
   }
-  auto mode = arguments["mode"].as<String>();
+  auto mode = arguments["mode"].as<std::string>();
 
   if (mode == "di")
   {
@@ -663,12 +687,15 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
     auto channel = channel_it->second;
     ledcSetup(channel, GPIO_PWM_FREQ, GPIO_PWM_RESOLUTION);
     ledcAttachPin(pin, channel);
-    auto duty = (uint32_t)(percent / 100.0f * (float)GPIO_PWM_MAX_DUTY + 0.5f);
-    if (duty > GPIO_PWM_MAX_DUTY)
-      duty = GPIO_PWM_MAX_DUTY;
-    ledcWrite(channel, duty);
+    // Duty cycle is kept as a float so sub-1% values stay representable; it is rounded to the nearest integer step only when written to the LEDC hardware.
+    auto duty = percent / 100.0f * (float)GPIO_PWM_MAX_DUTY;
+    auto duty_step = (uint32_t)(duty + 0.5f);
+    if (duty_step > GPIO_PWM_MAX_DUTY)
+      duty_step = GPIO_PWM_MAX_DUTY;
+    ledcWrite(channel, duty_step);
+    log_d("GPIO%d analog output: %.3f%% -> duty %.3f/%u, step %u", pin, percent, duty, (unsigned)GPIO_PWM_MAX_DUTY, (unsigned)duty_step);
 
-    auto text = std::string("Pin GPIO") + std::to_string(pin) + " PWM duty set to " + std::to_string((int)(percent + 0.5f)) + "% (duty " + std::to_string(duty) + "/" + std::to_string(GPIO_PWM_MAX_DUTY) + ")";
+    auto text = std::string("Pin GPIO") + std::to_string(pin) + " PWM duty set to " + format_float(percent) + "% (duty " + format_float(duty) + "/" + std::to_string(GPIO_PWM_MAX_DUTY) + ")";
     mcp_response_schema r(response);
     r.text(text)
       .field("pin", pin)
@@ -688,7 +715,7 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
 void handle_tools_call(const mcp_request &request, mcp_response &response)
 {
   auto params = request.params();
-  auto tool_name = params["name"].as<String>();
+  auto tool_name = params["name"].as<std::string>();
   auto arguments = params["arguments"].as<JsonObject>();
 
   if (tool_name == "led")
@@ -706,14 +733,14 @@ void handle_tools_call(const mcp_request &request, mcp_response &response)
   else
   {
     // Tool not found, set error
-    if (tool_name.isEmpty())
+    if (tool_name.empty())
       mcp_schema_error(response)
         .code(error_code::invalid_request)
         .message("Tool name is required");
     else
       mcp_schema_error(response)
         .code(error_code::method_not_found)
-        .message(std::string(("Unknown tool: " + tool_name).c_str()));
+        .message("Unknown tool: " + tool_name);
   }
 }
 
@@ -761,7 +788,7 @@ void handleRoot()
   mcp_response mcp_response;
   try
   {
-    mcp_request mcp_request(server.arg("plain"));
+    mcp_request mcp_request(std::string(server.arg("plain").c_str()));
     mcp_response.set_id(mcp_request.id());
 
     // Handle MCP methods
@@ -781,7 +808,7 @@ void handleRoot()
     else
       mcp_schema_error(mcp_response)
         .code(error_code::method_not_found)
-        .message(std::string(("Method not found: " + mcp_request.method()).c_str()));
+        .message("Method not found: " + mcp_request.method());
   }
   catch (const mcp_exception &e)
   {
@@ -800,12 +827,15 @@ void handleRoot()
   // Try deflate if the client accepts it; fall back to plain text on any failure
   if (client_accepts("deflate"))
   {
-    String deflated;
+    std::string deflated;
     if (deflate_compress(body, deflated))
     {
       server.sendHeader("Content-Encoding", "deflate");
       log_d("Sending deflate response: %d %s len=%u (deflate)", http_code, content_type, (unsigned)deflated.length());
-      server.send(http_code, content_type, deflated);
+      // Send with an explicit length: the deflated payload is binary and may contain
+      // embedded NUL bytes, so the const char* overload (which uses strlen/String())
+      // would truncate it. The String(const char*, unsigned int) overload preserves it.
+      server.send(http_code, content_type, String(deflated.data(), static_cast<unsigned int>(deflated.size())));
       return;
     }
   }
@@ -813,7 +843,7 @@ void handleRoot()
 
   // Deflate not enabled or failed, fall back to plain text
   log_d("Sending response: %d %s len=%u", http_code, content_type, (unsigned)body.length());
-  server.send(http_code, content_type, body);
+  server.send(http_code, content_type, body.c_str());
 }
 
 void setup()

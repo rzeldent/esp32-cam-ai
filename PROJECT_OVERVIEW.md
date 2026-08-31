@@ -55,7 +55,7 @@ pio device monitor
 ### GPIO Control
 
 - **Function**: Read/write GPIO pins
-- **Parameters**: `pin` (2, 12, 13, 14, 15), `mode` (`di`, `ai`, `do`, `ao`), `value` (bool for `do`, 0-100 for `ao`)
+- **Parameters**: `pin` (2, 12, 13, 14, 15), `mode` (`di`, `ai`, `do`, `ao`), `value` (bool for `do`, 0-100 float for `ao`, sub-1% supported)
 - **Modes**:
   - `di` — digital input, returns `value` `true`/`false`
   - `ai` — analog input, returns `value` 0-100 (calibrated % of max input)

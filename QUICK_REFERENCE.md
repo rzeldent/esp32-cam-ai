@@ -43,7 +43,7 @@ WIFI_PASSWORD="YourPassword"
 | `led` | `on`: true/false | Control built-in LED |
 | `flash` | `duration`: 5-100ms | Trigger camera flash |
 | `capture` | `flash`: true/false, `frame_size`, `quality`, `whitebalance`, `pixelformat` | Take photo with optional flash |
-| `gpio` | `pin`: 2,12,13,14,15; `mode`: di/ai/do/ao; `value`: bool or 0-100 | Read/write GPIO pins |
+| `gpio` | `pin`: 2,12,13,14,15; `mode`: di/ai/do/ao; `value`: bool or 0-100 (float, sub-1% ok) | Read/write GPIO pins |
 | `wifi_status` | None | Get network information |
 | `system_status` | None | Get system diagnostics |
 
@@ -299,6 +299,23 @@ curl -X POST http://192.168.1.100/ \
       }
     }
   }'
+
+# Set GPIO4 to 0.5% PWM duty (analog output; float accepted for sub-1%)
+curl -X POST http://192.168.1.100/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 9,
+    "method": "tools/call",
+    "params": {
+      "name": "gpio",
+      "arguments": {
+        "pin": 4,
+        "mode": "ao",
+        "value": 0.5
+      }
+    }
+  }'
 ```
 
 ## Python Integration Example
@@ -420,6 +437,10 @@ if __name__ == "__main__":
     # Set GPIO2 as digital output HIGH
     print("\nSetting GPIO2 HIGH...")
     cam.gpio(2, "do", True)
+    
+    # Set GPIO4 to 0.5% PWM duty (analog output; float accepted for sub-1%)
+    print("\nSetting GPIO4 to 0.5% duty...")
+    cam.gpio(4, "ao", 0.5)
     
     # Read GPIO13 as digital input
     print("Reading GPIO13...")

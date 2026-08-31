@@ -180,12 +180,12 @@ The `gpio` tool controls the GPIO pins of the ESP32-CAM. Valid pins are **GPIO2,
 - **`di`** (digital input) — Configures the pin as a digital input. Returns `value` as `true`/`false` depending on the logical level of the pin.
 - **`ai`** (analog input) — Configures the pin as an analog input. Uses the ADC calibration helper functions (`analogReadMilliVolts`) for a linear reading, and returns `value` as the percentage (0-100) of the max input (3.3V).
 - **`do`** (digital output) — Configures the pin as a digital output. Accepts `value` `true`/`false` and sets the pin to the corresponding logical level.
-- **`ao`** (analog output) — Configures the pin as a PWM (analog) output. Accepts `value` `0-100` as the duty cycle percentage.
+- **`ao`** (analog output) — Configures the pin as a PWM (analog) output. Accepts `value` `0-100` as the duty cycle percentage; **floats are accepted for sub-1% duty** (e.g. `0.5` = 0.5%).
 
 #### Implementation Details
 
 - Each pin is mapped to a dedicated LEDC channel (10-15) for analog output, using high-speed group 1 (timers 1-3). These never collide with the camera's XCLK PWM, which uses low-speed group 0 (timer 0 or 1, channel 0 or 1).
-- Analog output uses 5000 Hz with 8-bit resolution (duty 0-255), set from the requested percentage.
+- Analog output uses 5000 Hz with 13-bit resolution (duty 0-8191), set from the requested percentage. Duty is computed as a float so sub-1% values are usable (e.g. 0.1% ≈ 8 steps).
 - Analog input expresses the calibrated millivolt reading as a percentage of the 3300 mV reference.
 
 #### Known Limitations

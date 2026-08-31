@@ -230,8 +230,8 @@ Controls the GPIO pins of the ESP32-CAM. Valid pins: **2, 12, 13, 14, 15**.
   - `di` (digital input) — returns `value` `true`/`false` from the pin's logical level
   - `ai` (analog input) — returns `value` `0-100` (percentage of the calibrated max input, via `analogReadMilliVolts`)
   - `do` (digital output) — sets `value` `true`/`false` on the pin (logical level)
-  - `ao` (analog output) — sets `value` `0-100` (PWM duty cycle percentage)
-- `value` (required for output modes): boolean for `do`, `0-100` number for `ao`
+  - `ao` (analog output) — sets `value` `0-100` (PWM duty cycle percentage; float accepted for sub-1% duty, e.g. `0.5` = 0.5%)
+- `value` (required for output modes): boolean for `do`, `0-100` number (float allowed) for `ao`
 
 **Notes:**
 
