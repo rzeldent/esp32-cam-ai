@@ -10,6 +10,7 @@ This project transforms an ESP32-CAM module into a remotely controllable camera 
 
 - **Remote Camera Control**: Capture images with optional flash
 - **LED Management**: Control built-in LED state
+- **GPIO Control**: Read/write GPIO pins (digital/analog in/out) via the `gpio` tool
 - **System Monitoring**: WiFi status and hardware diagnostics
 - **MCP Protocol Compliance**: Standard JSON-RPC 2.0 interface
 - **Network Reliability**: Auto-reconnection and watchdog protection
@@ -50,6 +51,17 @@ pio device monitor
 
 - **Function**: Trigger camera flash
 - **Parameters**: `duration` (5-100ms, default 50ms)
+
+### GPIO Control
+
+- **Function**: Read/write GPIO pins
+- **Parameters**: `pin` (2, 12, 13, 14, 15), `mode` (`di`, `ai`, `do`, `ao`), `value` (bool for `do`, 0-100 for `ao`)
+- **Modes**:
+  - `di` — digital input, returns `value` `true`/`false`
+  - `ai` — analog input, returns `value` 0-100 (calibrated % of max input)
+  - `do` — digital output, sets `value` `true`/`false`
+  - `ao` — analog output (PWM), sets `value` 0-100 duty cycle
+- **Output**: Pin state/value and status text
 
 ### Image Capture
 

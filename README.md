@@ -25,6 +25,7 @@ Brief: **Use Copilot or other AI digital assistants, like AI-Toolkit (in VSCode)
 - **LED Control**: Turn the ESP32-CAM's built-in LED on/off
 - **Flash Control**: Trigger camera flash with configurable duration (5-100ms)
 - **Camera Capture**: Take photos with optional flash support (optimized for <4KB base64)
+- **GPIO Control**: Read/write GPIO pins (digital/analog in/out) via the `gpio` tool
 - **Real-time Control**: Instant response to MCP tool calls
 
 ### System Monitoring
@@ -214,6 +215,48 @@ Triggers the camera flash for a specified duration.
   "params": {
     "name": "flash",
     "arguments": {"duration": 75}
+  }
+}
+```
+
+### GPIO Control
+
+Controls the GPIO pins of the ESP32-CAM. Valid pins: **2, 12, 13, 14, 15**.
+
+**Parameters:**
+
+- `pin` (required): GPIO pin number. Valid pins: `2`, `12`, `13`, `14`, `15`
+- `mode` (required): One of:
+  - `di` (digital input) — returns `value` `true`/`false` from the pin's logical level
+  - `ai` (analog input) — returns `value` `0-100` (percentage of the calibrated max input, via `analogReadMilliVolts`)
+  - `do` (digital output) — sets `value` `true`/`false` on the pin (logical level)
+  - `ao` (analog output) — sets `value` `0-100` (PWM duty cycle percentage)
+- `value` (required for output modes): boolean for `do`, `0-100` number for `ao`
+
+**Notes:**
+
+- Analog input pins are ADC2 channels, which are unavailable while Wi-Fi is active (readings may be 0).
+
+**Examples:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "gpio",
+    "arguments": {"pin": 2, "mode": "do", "value": true}
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "gpio",
+    "arguments": {"pin": 13, "mode": "ao", "value": 75}
   }
 }
 ```
@@ -560,8 +603,38 @@ def capture_image(esp32_ip, use_flash=False):
     else:
         print(f"Error: {data.get('error', {}).get('message', 'Unknown error')}")
 
+def gpio_control(esp32_ip, pin, mode, value=None):
+    url = f"http://{esp32_ip}/"
+    arguments = {"pin": pin, "mode": mode}
+    if value is not None:
+        arguments["value"] = value
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "gpio",
+            "arguments": arguments
+        }
+    }
+
+    response = requests.post(url, json=payload)
+    data = response.json()
+
+    if "result" in data:
+        sc = data["result"].get("structuredContent", {})
+        print(f"GPIO{pin} ({mode}) value: {sc.get('value')}")
+        return sc
+    else:
+        print(f"Error: {data.get('error', {}).get('message', 'Unknown error')}")
+        return None
+
 # Usage
 capture_image("192.168.1.132", use_flash=True)
+gpio_control("192.168.1.132", 2, "do", True)   # GPIO2 -> HIGH
+gpio_control("192.168.1.132", 13, "ao", 75)    # GPIO13 -> 75% PWM
+gpio_control("192.168.1.132", 13, "di")        # Read GPIO13
 ```
 
 #### Node.js Integration

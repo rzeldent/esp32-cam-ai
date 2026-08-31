@@ -169,6 +169,29 @@ The camera lens should face the target while the small flash LED (adjacent to th
 
 Serial debugging throughout the application using the log_ macros
 
+## GPIO Tool Documentation
+
+### Complete Parameter Reference
+
+The `gpio` tool controls the GPIO pins of the ESP32-CAM. Valid pins are **GPIO2, GPIO12, GPIO13, GPIO14, and GPIO15**. Each pin can be configured in one of four modes:
+
+#### Modes
+
+- **`di`** (digital input) — Configures the pin as a digital input. Returns `value` as `true`/`false` depending on the logical level of the pin.
+- **`ai`** (analog input) — Configures the pin as an analog input. Uses the ADC calibration helper functions (`analogReadMilliVolts`) for a linear reading, and returns `value` as the percentage (0-100) of the max input (3.3V).
+- **`do`** (digital output) — Configures the pin as a digital output. Accepts `value` `true`/`false` and sets the pin to the corresponding logical level.
+- **`ao`** (analog output) — Configures the pin as a PWM (analog) output. Accepts `value` `0-100` as the duty cycle percentage.
+
+#### Implementation Details
+
+- Each pin is mapped to a dedicated LEDC channel (10-15) for analog output, using high-speed group 1 (timers 1-3). These never collide with the camera's XCLK PWM, which uses low-speed group 0 (timer 0 or 1, channel 0 or 1).
+- Analog output uses 5000 Hz with 8-bit resolution (duty 0-255), set from the requested percentage.
+- Analog input expresses the calibrated millivolt reading as a percentage of the 3300 mV reference.
+
+#### Known Limitations
+
+- All valid pins are ADC2 channels, which are **unavailable while Wi-Fi is active** (readings may be 0).
+
 ## System Status Tool Documentation
 
 ### Complete Parameter Reference
@@ -390,7 +413,7 @@ if (millis() - last_request < MIN_REQUEST_INTERVAL) {
 ### Version 1.0.0 (Current)
 
 - Complete MCP protocol implementation
-- Five core tools (LED, flash, capture, WiFi status, system status)
+- Six core tools (LED, flash, capture, GPIO, WiFi status, system status)
 - Robust WiFi management with auto-reconnection
 - Comprehensive error handling and reporting
 - Base64 image encoding and transfer (optimized for 4KB limit)

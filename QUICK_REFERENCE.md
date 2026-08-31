@@ -43,6 +43,7 @@ WIFI_PASSWORD="YourPassword"
 | `led` | `on`: true/false | Control built-in LED |
 | `flash` | `duration`: 5-100ms | Trigger camera flash |
 | `capture` | `flash`: true/false, `frame_size`, `quality`, `whitebalance`, `pixelformat` | Take photo with optional flash |
+| `gpio` | `pin`: 2,12,13,14,15; `mode`: di/ai/do/ao; `value`: bool or 0-100 | Read/write GPIO pins |
 | `wifi_status` | None | Get network information |
 | `system_status` | None | Get system diagnostics |
 
@@ -142,10 +143,27 @@ $ledOn = @{
 
 Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $ledOn -ContentType "application/json"
 
+# Set GPIO2 as digital output HIGH
+$gpio = @{
+    jsonrpc = "2.0"
+    id = 4
+    method = "tools/call"
+    params = @{
+        name = "gpio"
+        arguments = @{
+            pin = 2
+            mode = "do"
+            value = $true
+        }
+    }
+} | ConvertTo-Json -Depth 10
+
+Invoke-RestMethod -Uri "http://192.168.1.100/" -Method Post -Body $gpio -ContentType "application/json"
+
 # Capture image with flash
 $capture = @{
     jsonrpc = "2.0"
-    id = 4
+    id = 5
     method = "tools/call"
     params = @{
         name = "capture"
@@ -264,6 +282,23 @@ curl -X POST http://192.168.1.100/ \
       "arguments": {}
     }
   }'
+
+# Set GPIO2 as digital output HIGH
+curl -X POST http://192.168.1.100/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 8,
+    "method": "tools/call",
+    "params": {
+      "name": "gpio",
+      "arguments": {
+        "pin": 2,
+        "mode": "do",
+        "value": true
+      }
+    }
+  }'
 ```
 
 ## Python Integration Example
@@ -348,6 +383,15 @@ class ESP32CamClient:
             "name": "system_status",
             "arguments": {}
         })
+    
+    def gpio(self, pin, mode, value=None):
+        arguments = {"pin": pin, "mode": mode}
+        if value is not None:
+            arguments["value"] = value
+        return self._make_request("tools/call", {
+            "name": "gpio",
+            "arguments": arguments
+        })
 
 # Usage example
 if __name__ == "__main__":
@@ -372,6 +416,15 @@ if __name__ == "__main__":
     # Flash the camera
     print("Flashing camera...")
     cam.flash_control(75)
+    
+    # Set GPIO2 as digital output HIGH
+    print("\nSetting GPIO2 HIGH...")
+    cam.gpio(2, "do", True)
+    
+    # Read GPIO13 as digital input
+    print("Reading GPIO13...")
+    gpio_result = cam.gpio(13, "di")
+    print(f"GPIO13 value: {gpio_result.get('result', {}).get('structuredContent', {}).get('value')}")
     
     # Capture image
     print("Capturing image...")
@@ -664,7 +717,7 @@ Create `.vscode/esp32cam.code-snippets`:
       "  \"id\": ${1:1},",
       "  \"method\": \"tools/call\",",
       "  \"params\": {",
-      "    \"name\": \"${2|led,flash,capture,wifi_status,system_status|}\",",
+      "    \"name\": \"${2|led,flash,capture,gpio,wifi_status,system_status|}\",",
       "    \"arguments\": {",
       "      $3",
       "    }",

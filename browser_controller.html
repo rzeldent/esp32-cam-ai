@@ -69,6 +69,37 @@
             <select id="capture-pixelformat"></select>
         </div>
 
+        <div class="control-group">
+            <h3>GPIO Controls</h3>
+            <label for="gpio-pin">Pin:</label>
+            <select id="gpio-pin">
+                <option value="2">GPIO2</option>
+                <option value="4">GPIO4</option>
+                <option value="12">GPIO12</option>
+                <option value="13">GPIO13</option>
+                <option value="14">GPIO14</option>
+                <option value="15">GPIO15</option>
+                <option value="33">GPIO33</option>
+            </select>
+            <label for="gpio-mode">Mode:</label>
+            <select id="gpio-mode" onchange="updateGpioControls()">
+                <option value="di">di (digital input)</option>
+                <option value="ai">ai (analog input)</option>
+                <option value="do">do (digital output)</option>
+                <option value="ao">ao (analog output)</option>
+            </select>
+            <span id="gpio-do-value" style="display:none;">
+                <label><input type="radio" name="gpio-do-level" value="true" checked> HIGH</label>
+                <label><input type="radio" name="gpio-do-level" value="false"> LOW</label>
+            </span>
+            <span id="gpio-ao-value" style="display:none;">
+                <label for="gpio-ao-duty">Duty (0-100%):</label>
+                <input type="number" id="gpio-ao-duty" min="0" max="100" value="50">
+            </span>
+            <br><br>
+            <button onclick="gpioRun()">Run GPIO</button>
+        </div>
+
         <div id="status" class="status">Ready to connect...</div>
         
         <div class="control-group">
@@ -332,6 +363,38 @@
             }
         }
 
+        // Shows only the value controls that apply to the currently selected GPIO mode.
+        function updateGpioControls() {
+            const mode = document.getElementById('gpio-mode').value;
+            document.getElementById('gpio-do-value').style.display = (mode === 'do') ? 'inline' : 'none';
+            document.getElementById('gpio-ao-value').style.display = (mode === 'ao') ? 'inline' : 'none';
+        }
+
+        // Reads (di/ai) or writes (do/ao) the selected GPIO pin via the gpio tool.
+        async function gpioRun() {
+            const pin = parseInt(document.getElementById('gpio-pin').value, 10);
+            const mode = document.getElementById('gpio-mode').value;
+            const args = { pin: pin, mode: mode };
+
+            if (mode === 'do') {
+                args.value = document.querySelector('input[name="gpio-do-level"]:checked').value === 'true';
+            } else if (mode === 'ao') {
+                const duty = parseInt(document.getElementById('gpio-ao-duty').value, 10);
+                args.value = isNaN(duty) ? 0 : Math.max(0, Math.min(100, duty));
+            }
+
+            const result = await sendMCPRequest('tools/call', {
+                name: 'gpio',
+                arguments: args
+            });
+
+            if (result) {
+                const value = result.structuredContent && result.structuredContent.value;
+                const action = (mode === 'di' || mode === 'ai') ? 'read value' : 'set value';
+                updateStatus(`GPIO${pin} (${mode}) ${action}: ${value}`);
+            }
+        }
+
         async function getStatus() {
             await sendMCPRequest('tools/call', {
                 name: 'system_status',
@@ -514,6 +577,7 @@
         // Populate capture options from tools/list on page load
         window.addEventListener('load', function() {
             updateStatus('Page loaded. Loading capture options from tools/list...');
+            updateGpioControls();
             loadToolOptions();
         });
     </script>

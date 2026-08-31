@@ -68,6 +68,15 @@ public:
     }
 
     // Declares a number property with min/max/default constraints.
+    tool_schema &number(const char *key, const char *description)
+    {
+        auto property = properties_[key].to<JsonObject>();
+        property["type"] = "number";
+        property["description"] = description;
+        return *this;
+    }
+
+    // Declares a number property with min/max/default constraints.
     tool_schema &number(const char *key, const char *description, long minimum, long maximum, long default_value)
     {
         auto property = properties_[key].to<JsonObject>();
@@ -86,6 +95,18 @@ public:
         property["type"] = "boolean";
         property["description"] = description;
         property["default"] = default_value;
+        return *this;
+    }
+
+    // Declares a property that accepts either a boolean or a number (union type),
+    // used when the expected value type depends on another argument (e.g. "mode").
+    tool_schema &any(const char *key, const char *description)
+    {
+        auto property = properties_[key].to<JsonObject>();
+        auto types = property["type"].to<JsonArray>();
+        types.add("boolean");
+        types.add("number");
+        property["description"] = description;
         return *this;
     }
 
