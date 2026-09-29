@@ -5,6 +5,7 @@
 #include <ArduinoOTA.h>
 #include <esp_camera.h>
 #include <soc/rtc_cntl_reg.h>
+#include <soc/soc_caps.h>
 #include <driver/i2c.h>
 #include <algorithm>
 #include <cctype>
@@ -74,18 +75,80 @@ static const std::map<std::string, int> camera_wb_modes = {
 // ---------------------------------------------------------------------------
 // GPIO control tool configuration
 // ---------------------------------------------------------------------------
-// Pins that can be managed through the "gpio" tool, each paired with a dedicated
-// LEDC (PWM) channel used in analog output mode. Channels 10-15 live in LEDC
-// high-speed group 1 (timers 1-3) and never collide with the camera XCLK PWM,
-// which uses low-speed group 0 (timer 0 or 1, channel 0 or 1).
-static const std::map<int, uint8_t> gpio_pwm_channels = {
-    {2, 10},
-    {4, 11}, // FLASH LED
-    {12, 12},
-    {13, 13},
-    {14, 14},
-    {15, 15},
-    {33, 9}}; // RED LED
+// Which pins the "gpio" tool accepts is derived from the selected board
+// (boards/*.json) and the chip capabilities instead of a fixed list:
+//   - the pin must exist on the chip and be usable (digitalPinIsValid),
+//   - the pins wired to the camera (CAMERA_CONFIG_PIN_*) are reserved,
+//   - each mode needs its own capability: an ADC channel for "ai", an output
+//     capable pin for "do"/"ao" (digitalPinToAnalogChannel / digitalPinCanOutput).
+// The led and flash tools own USER_LED_GPIO / FLASH_LED_GPIO and are unaffected.
+
+// True when the pin is part of the camera wiring (DVP data/clock/sync or SCCB).
+static bool is_camera_pin(int pin)
+{
+  return pin == CAMERA_CONFIG_PIN_PWDN || pin == CAMERA_CONFIG_PIN_RESET ||
+         pin == CAMERA_CONFIG_PIN_XCLK || pin == CAMERA_CONFIG_PIN_SCCB_SDA ||
+         pin == CAMERA_CONFIG_PIN_SCCB_SCL || pin == CAMERA_CONFIG_PIN_PCLK ||
+         pin == CAMERA_CONFIG_PIN_VSYNC || pin == CAMERA_CONFIG_PIN_HREF ||
+         pin == CAMERA_CONFIG_PIN_Y2 || pin == CAMERA_CONFIG_PIN_Y3 ||
+         pin == CAMERA_CONFIG_PIN_Y4 || pin == CAMERA_CONFIG_PIN_Y5 ||
+         pin == CAMERA_CONFIG_PIN_Y6 || pin == CAMERA_CONFIG_PIN_Y7 ||
+         pin == CAMERA_CONFIG_PIN_Y8 || pin == CAMERA_CONFIG_PIN_Y9;
+}
+
+// True when the "gpio" tool may address the pin at all.
+static bool gpio_pin_available(int pin)
+{
+  return pin >= 0 && pin < SOC_GPIO_PIN_COUNT && digitalPinIsValid(pin) && !is_camera_pin(pin);
+}
+
+// Comma separated list of the pins this board exposes to the "gpio" tool.
+static std::string gpio_pin_list()
+{
+  std::string list;
+  for (int pin = 0; pin < SOC_GPIO_PIN_COUNT; ++pin)
+  {
+    if (!gpio_pin_available(pin))
+      continue;
+    if (!list.empty())
+      list += ", ";
+    list += std::to_string(pin);
+  }
+  return list.empty() ? "none" : list;
+}
+
+// LEDC (PWM) channel per pin for analog output mode, allocated on first use. The
+// highest channels are used first so the low ones stay free for the camera XCLK
+// PWM, which is set up in low speed mode (CAMERA_CONFIG_LEDC_TIMER/_CHANNEL).
+static std::map<int, uint8_t> gpio_pwm_channels;
+
+static int gpio_pwm_channel_for(int pin)
+{
+  auto channel_it = gpio_pwm_channels.find(pin);
+  if (channel_it != gpio_pwm_channels.end())
+    return channel_it->second;
+
+  for (int channel = SOC_LEDC_CHANNEL_NUM - 1; channel >= 0; --channel)
+  {
+    if (channel == CAMERA_CONFIG_LEDC_CHANNEL)
+      continue;
+
+    auto in_use = false;
+    for (const auto &entry : gpio_pwm_channels)
+      if (entry.second == channel)
+      {
+        in_use = true;
+        break;
+      }
+
+    if (!in_use)
+    {
+      gpio_pwm_channels[pin] = (uint8_t)channel;
+      return channel;
+    }
+  }
+  return -1;
+}
 
 // PWM settings for analog output mode (duty cycle given as a percentage).
 // 13-bit resolution (duty 0..8191) makes sub-1% values usable: 0.1% -> ~8 steps.
@@ -261,18 +324,28 @@ void handle_tools_list(mcp_response &response)
                           "sdk_version (string), reset_reason (integer), camera_initialized (boolean), "
                           "internal_temperature_c (number, °C; only on boards with an internal temperature sensor)");
 
-  // Add GPIO control tool
-  tool_schema gpio_tool(tools.add<JsonObject>(), "gpio",
-                        "Controls the GPIO pins of the ESP32-CAM. "
-                        "Valid pins: 2, 4 (flash), 12, 13, 14, 15, 33 (red LED). "
-                        "Modes: di (digital input, returns value true/false from the logical level), "
-                        "ai (analog input, returns value 0-100, percentage of the calibrated max input), "
-                        "do (digital output, sets value true/false), "
-                        "ao (analog output, sets value 0-100, PWM duty cycle percentage). "
-                        "Note: analog input pins are ADC2 channels which are unavailable while Wi-Fi is "
-                        "active (readings may be 0).");
+  // Add GPIO control tool. The usable pins depend on the selected board, so the
+  // list is resolved here; the strings are static because the const char* handed
+  // to the schema has to stay valid for the lifetime of the document.
+  static const std::string gpio_pins = gpio_pin_list();
+  static const std::string gpio_tool_description =
+      "Controls the GPIO pins of the ESP32-CAM. Pins that do not exist on the chip, "
+      "pins wired to the camera and pins lacking the capability required by the mode "
+      "are rejected. Available pins: " +
+      gpio_pins +
+      ". "
+      "Modes: di (digital input, returns value true/false from the logical level), "
+      "ai (analog input, returns value 0-100, percentage of the calibrated max input), "
+      "do (digital output, sets value true/false), "
+      "ao (analog output, sets value 0-100, PWM duty cycle percentage). "
+      "Note: analog input pins are ADC2 channels which are unavailable while Wi-Fi is "
+      "active (readings may be 0).";
+  static const std::string gpio_pin_description =
+      "GPIO pin to control. Available on this board: " + gpio_pins;
+
+  tool_schema gpio_tool(tools.add<JsonObject>(), "gpio", gpio_tool_description.c_str());
   gpio_tool
-      .number("pin", "GPIO pin to control. Valid pins: 2, 4, 12, 13, 14, 15, 33")
+      .number("pin", gpio_pin_description.c_str())
       .enum_string("mode", "Pin mode", {"di", "ai", "do", "ao"})
       .any("value", "Required for output modes. do: true (HIGH) or false (LOW). ao: 0-100 (duty cycle percentage; float accepted, e.g. 0.5 = 0.5%).")
       .required("pin")
@@ -615,14 +688,14 @@ void tool_system_status(mcp_response &response)
 
 void tool_gpio(JsonObject arguments, mcp_response &response)
 {
-  // Resolve and validate the target pin
+  // Resolve and validate the target pin: it must exist on the chip and must not be
+  // part of the camera wiring on the selected board
   auto pin = arguments["pin"].as<int>();
-  auto channel_it = gpio_pwm_channels.find(pin);
-  if (channel_it == gpio_pwm_channels.end())
+  if (!gpio_pin_available(pin))
   {
     mcp_schema_error(response)
         .code(error_code::invalid_params)
-        .message("Invalid or missing pin. Valid pins: 2, 12, 13, 14, 15.");
+        .message("Invalid or missing pin. Available pins: " + gpio_pin_list() + ".");
     return;
   }
 
@@ -651,6 +724,13 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
   }
   else if (mode == "ai")
   {
+    if (digitalPinToAnalogChannel(pin) < 0)
+    {
+      mcp_schema_error(response)
+          .code(error_code::invalid_params)
+          .message("Pin GPIO" + std::to_string(pin) + " has no ADC channel, so ai mode is not available for it.");
+      return;
+    }
     // Release the pin from any previously assigned PWM channel
     ledcDetachPin(pin);
     pinMode(pin, ANALOG);
@@ -678,6 +758,13 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
       mcp_schema_error(response)
           .code(error_code::invalid_params)
           .message("Value (true/false) is required for do mode.");
+      return;
+    }
+    if (!digitalPinCanOutput(pin))
+    {
+      mcp_schema_error(response)
+          .code(error_code::invalid_params)
+          .message("Pin GPIO" + std::to_string(pin) + " is input only, so do mode is not available for it.");
       return;
     }
     auto state = arguments["value"].as<bool>();
@@ -709,7 +796,21 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
       return;
     }
 
-    auto channel = channel_it->second;
+    if (!digitalPinCanOutput(pin))
+    {
+      mcp_schema_error(response)
+          .code(error_code::invalid_params)
+          .message("Pin GPIO" + std::to_string(pin) + " is input only, so ao mode is not available for it.");
+      return;
+    }
+    auto channel = gpio_pwm_channel_for(pin);
+    if (channel < 0)
+    {
+      mcp_schema_error(response)
+          .code(error_code::internal_error)
+          .message("No free PWM channel available for GPIO" + std::to_string(pin) + ".");
+      return;
+    }
     ledcSetup(channel, GPIO_PWM_FREQ, GPIO_PWM_RESOLUTION);
     ledcAttachPin(pin, channel);
     // Duty cycle is kept as a float so sub-1% values stay representable; it is rounded to the nearest integer step only when written to the LEDC hardware.
