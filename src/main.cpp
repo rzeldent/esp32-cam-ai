@@ -5,8 +5,10 @@
 #include <ArduinoOTA.h>
 #include <esp_camera.h>
 #include <soc/rtc_cntl_reg.h>
+#include <driver/i2c.h>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <map>
 #include <string>
@@ -14,7 +16,7 @@
 #include <mcp.h>
 #include <libb64/cdecode.h>
 
-#include "camera_config.h"
+#include "board_config.h"
 #include "settings.h"
 #include "mcp_schema_tool.h"
 #include "mcp_schema_response.h"
@@ -31,10 +33,6 @@
 
 #ifndef WIFI_PASSWORD
 #error "WIFI_PASSWORD is not defined. Please define it in your environment variables or in the code."
-#endif
-
-#ifndef LED_GPIO
-#error "LED_GPIO is not defined. Please define it in your build flags."
 #endif
 
 #define STR_HELPER(x) #x
@@ -82,7 +80,7 @@ static const std::map<std::string, int> camera_wb_modes = {
 // which uses low-speed group 0 (timer 0 or 1, channel 0 or 1).
 static const std::map<int, uint8_t> gpio_pwm_channels = {
     {2, 10},
-    {4, 11},  // FLASH LED
+    {4, 11}, // FLASH LED
     {12, 12},
     {13, 13},
     {14, 14},
@@ -93,8 +91,8 @@ static const std::map<int, uint8_t> gpio_pwm_channels = {
 // 13-bit resolution (duty 0..8191) makes sub-1% values usable: 0.1% -> ~8 steps.
 // 13 bits is the max resolution that still supports 5 kHz on the 80 MHz APB clock
 // (max freq = 80 MHz / 2^13 ~ 9.7 kHz; 14 bits would cap at ~4.8 kHz).
-static constexpr uint32_t GPIO_PWM_FREQ = 5000;                          // Hz
-static constexpr uint8_t GPIO_PWM_RESOLUTION = 13;                       // bits -> duty 0..8191
+static constexpr uint32_t GPIO_PWM_FREQ = 5000;                                // Hz
+static constexpr uint8_t GPIO_PWM_RESOLUTION = 13;                             // bits -> duty 0..8191
 static constexpr uint32_t GPIO_PWM_MAX_DUTY = (1U << GPIO_PWM_RESOLUTION) - 1; // 8191
 // Full-scale ADC reference (mV) used to express an analog input as a percentage.
 static constexpr uint32_t GPIO_ADC_REFERENCE_MV = 3300;
@@ -128,16 +126,6 @@ std::string base64_encode(const uint8_t *data, size_t len)
   }
   return out;
 }
-
-// Temperature export (funny; has a typo!)
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-  uint8_t temprature_sens_read();
-#ifdef __cplusplus
-}
-#endif
 
 WebServer server;
 // Hex-encoded MAC address (Arduino boundary: ESP.getEfuseMac() -> hex String) used for a unique mDNS hostname.
@@ -238,13 +226,13 @@ void handle_tools_list(mcp_response &response)
   // Add LED control tool
   tool_schema led_tool(tools.add<JsonObject>(), "led", "Controls the ESP32-CAM LED state");
   led_tool
-    .boolean("on", "LED on", false)
-    .required("on");
+      .boolean("on", "LED on", false)
+      .required("on");
 
   // Add flash control tool
   tool_schema flash_tool(tools.add<JsonObject>(), "flash", "Controls the ESP32-CAM Flash");
   flash_tool
-    .number("duration", "Flash duration in milliseconds", 5, 100, 50);
+      .number("duration", "Flash duration in milliseconds", 5, 100, 50);
 
   // Add camera capture tool
   tool_schema camera_tool(tools.add<JsonObject>(), "capture", "Captures a photo from the ESP32-CAM");
@@ -252,7 +240,7 @@ void handle_tools_list(mcp_response &response)
       .boolean("flash", "Use flash when capturing", false)
       .enum_table("frame_size", "Resolution to use for the captured photo", frame_sizes, [](framesize_t size)
                   { return size == MCP_CAPTURE_FRAMESIZE; })
-      .number("quality", "JPEG quality for the captured photo (1-100)", 1, 100, MCP_CAPTURE_QUALITY)
+      .number("quality", "JPEG quality for the captured photo (1-100)", 1, 100, MCP_CAPTURE_JPEG_QUALITY)
       .enum_table("whitebalance", "White balance mode for the captured photo", camera_wb_modes, [](int mode)
                   { return mode == MCP_CAPTURE_WB_MODE; })
       .enum_table("pixelformat", "Pixel format for the captured photo", pixel_formats, [](pixformat_t fmt)
@@ -271,7 +259,7 @@ void handle_tools_list(mcp_response &response)
                           "max_alloc_heap_bytes (integer), cpu_frequency_mhz (integer), flash_size_bytes (integer), "
                           "flash_speed_hz (integer), sketch_size_bytes (integer), free_sketch_space_bytes (integer), "
                           "sdk_version (string), reset_reason (integer), camera_initialized (boolean), "
-                          "internal_temperature_c (number, °C)");
+                          "internal_temperature_c (number, °C; only on boards with an internal temperature sensor)");
 
   // Add GPIO control tool
   tool_schema gpio_tool(tools.add<JsonObject>(), "gpio",
@@ -293,6 +281,14 @@ void handle_tools_list(mcp_response &response)
 
 void tool_led(JsonObject arguments, mcp_response &response)
 {
+  if (!has_user_led)
+  {
+    mcp_schema_error(response)
+        .code(error_code::internal_error)
+        .message("This board does not have a user LED.");
+    return;
+  }
+
   mcp_response_schema r(response);
   if (arguments["on"].as<bool>())
   {
@@ -308,6 +304,14 @@ void tool_led(JsonObject arguments, mcp_response &response)
 
 void tool_flash(JsonObject arguments, mcp_response &response)
 {
+  if (!has_flash_led)
+  {
+    mcp_schema_error(response)
+        .code(error_code::internal_error)
+        .message("This board does not have a flash LED.");
+    return;
+  }
+
   auto duration = arguments["duration"].is<int>() ? arguments["duration"].as<int>() : 50; // Default to 50ms if not provided
   digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
   delay(duration); // 5-100ms
@@ -332,23 +336,23 @@ void tool_capture(JsonObject arguments, mcp_response &response)
         valid_options += entry.first;
       }
       mcp_schema_error(response)
-        .code(error_code::invalid_params)
-        .message("Invalid frame_size. Valid options: " + valid_options + ".");
+          .code(error_code::invalid_params)
+          .message("Invalid frame_size. Valid options: " + valid_options + ".");
       return;
     }
     capture_framesize = frame_size_it->second;
   }
 
   // Resolve the requested JPEG quality (1-100) from the quality argument
-  auto capture_quality = MCP_CAPTURE_QUALITY;
+  auto capture_quality = MCP_CAPTURE_JPEG_QUALITY;
   if (!arguments["quality"].isNull())
   {
     auto quality = arguments["quality"].as<int>();
     if (quality < 1 || quality > 100)
     {
       mcp_schema_error(response)
-        .code(error_code::invalid_params)
-        .message("Invalid quality. Must be between 1 and 100.");
+          .code(error_code::invalid_params)
+          .message("Invalid quality. Must be between 1 and 100.");
       return;
     }
     capture_quality = quality;
@@ -391,25 +395,49 @@ void tool_capture(JsonObject arguments, mcp_response &response)
         valid_options += entry.first;
       }
       mcp_schema_error(response)
-        .code(error_code::invalid_params)
-        .message("Invalid pixelformat. Valid options: " + valid_options + ".");
+          .code(error_code::invalid_params)
+          .message("Invalid pixelformat. Valid options: " + valid_options + ".");
       return;
     }
     capture_pixelformat = pixel_format_it->second;
   }
 
   // Build the camera configuration with the requested parameters and (re)initialize
-  camera_config_t config = esp32cam_aithinker_settings;
-  config.frame_size = capture_framesize;
-  config.pixel_format = capture_pixelformat;
-  config.jpeg_quality = capture_quality;
+  // Camera configuration for the selected board.
+  // The default frame size, pixel format and JPEG quality are overridden per capture request by the MCP "capture" tool (see MCP_CAPTURE_* in settings.h).
+  constexpr camera_config_t config = {
+      .pin_pwdn = CAMERA_CONFIG_PIN_PWDN,
+      .pin_reset = CAMERA_CONFIG_PIN_RESET,
+      .pin_xclk = CAMERA_CONFIG_PIN_XCLK,
+      .pin_sccb_sda = CAMERA_CONFIG_PIN_SCCB_SDA,
+      .pin_sccb_scl = CAMERA_CONFIG_PIN_SCCB_SCL,
+      .pin_d7 = CAMERA_CONFIG_PIN_Y9,
+      .pin_d6 = CAMERA_CONFIG_PIN_Y8,
+      .pin_d5 = CAMERA_CONFIG_PIN_Y7,
+      .pin_d4 = CAMERA_CONFIG_PIN_Y6,
+      .pin_d3 = CAMERA_CONFIG_PIN_Y5,
+      .pin_d2 = CAMERA_CONFIG_PIN_Y4,
+      .pin_d1 = CAMERA_CONFIG_PIN_Y3,
+      .pin_d0 = CAMERA_CONFIG_PIN_Y2,
+      .pin_vsync = CAMERA_CONFIG_PIN_VSYNC,
+      .pin_href = CAMERA_CONFIG_PIN_HREF,
+      .pin_pclk = CAMERA_CONFIG_PIN_PCLK,
+      .xclk_freq_hz = CAMERA_CONFIG_CLK_FREQ_HZ,
+      .ledc_timer = CAMERA_CONFIG_LEDC_TIMER,
+      .ledc_channel = CAMERA_CONFIG_LEDC_CHANNEL,
+      .pixel_format = MCP_CAPTURE_PIXELFORMAT,
+      .frame_size = MCP_CAPTURE_FRAMESIZE,
+      .jpeg_quality = MCP_CAPTURE_JPEG_QUALITY,
+      .fb_count = CAMERA_CONFIG_FB_COUNT,
+      .fb_location = CAMERA_CONFIG_FB_LOCATION,
+      .sccb_i2c_port = CAMERA_CONFIG_SCCB_I2C_PORT};
 
   auto camera_init_result = esp_camera_init(&config);
   if (camera_init_result != ESP_OK)
   {
     mcp_schema_error(response)
-      .code(error_code::internal_error)
-      .message("Camera initialization failed (0x" + std::string(String(camera_init_result, 16).c_str()) + ")");
+        .code(error_code::internal_error)
+        .message("Camera initialization failed (0x" + std::string(String(camera_init_result, 16).c_str()) + ")");
     return;
   }
 
@@ -419,7 +447,7 @@ void tool_capture(JsonObject arguments, mcp_response &response)
 
   log_d("Capture: free heap before capture: %d", ESP.getFreeHeap());
 
-  if (arguments["flash"].as<bool>())
+  if (has_flash_led && arguments["flash"].as<bool>())
   {
     digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL);
     delay(20); // Allow flash to stabilize
@@ -446,14 +474,15 @@ void tool_capture(JsonObject arguments, mcp_response &response)
     log_w("Capture: failed to capture frame, free heap after capture: %d", ESP.getFreeHeap());
 
   // Turn flash off immediately after capture attempt
-  digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
+  if (has_flash_led)
+    digitalWrite(FLASH_GPIO, !FLASH_ON_LEVEL);
 
   if (!fb)
   {
     esp_camera_deinit();
     mcp_schema_error(response)
-      .code(error_code::internal_error)
-      .message("Camera capture failed");
+        .code(error_code::internal_error)
+        .message("Camera capture failed");
     return;
   }
 
@@ -492,27 +521,21 @@ void tool_capture(JsonObject arguments, mcp_response &response)
   std::string text =
       "Image captured successfully. "
       "Pixel format: " +
-      std::string(pixel_format_name) + ", "
-                                       "Frame size: " +
-      std::string(frame_size_name) + ", "
-                                     "Quality: " +
-      std::to_string(capture_quality) + ", "
-                                        "White balance: " +
-      std::string(wb_mode_name) + ", "
-                                  "Flash: " +
-      std::string(arguments["flash"].as<bool>() ? "on" : "off") + ", "
-                                                                  "Dimensions: " +
-      std::to_string(fb_width) + "x" + std::to_string(fb_height) + ", "
-                                                                   "Size: " +
+      std::string(pixel_format_name) + ", Frame size: " +
+      std::string(frame_size_name) + ", Quality: " +
+      std::to_string(capture_quality) + ", White balance: " +
+      std::string(wb_mode_name) + ", Flash: " +
+      std::string(arguments["flash"].as<bool>() ? "on" : "off") + ", Dimensions: " +
+      std::to_string(fb_width) + "x" + std::to_string(fb_height) + ", Size: " +
       std::to_string(base64_image.length()) + " bytes (base64 encoded)";
 
   mcp_response_schema r(response);
   r.text(text)
-    .field("image", base64_image)
-    .field("format", pixel_format_name)
-    .field("width", fb_width)
-    .field("height", fb_height)
-    .field("mimeType", capture_pixelformat == PIXFORMAT_JPEG ? "image/jpeg" : "image/x-raw");
+      .field("image", base64_image)
+      .field("format", pixel_format_name)
+      .field("width", fb_width)
+      .field("height", fb_height)
+      .field("mimeType", capture_pixelformat == PIXFORMAT_JPEG ? "image/jpeg" : "image/x-raw");
   // The JSON document already holds its own copy of the image data
   base64_image.clear();
 }
@@ -534,17 +557,15 @@ void tool_wifi_status(mcp_response &response)
   // Text summary plus the parameters individually as structuredContent (MCP 2025-06-18+)
   mcp_response_schema r(response);
   r.text(text)
-    .field("ip_address", WiFi.localIP().toString())
-    .field("signal_strength_dbm", WiFi.RSSI())
-    .field("mac_address", WiFi.macAddress())
-    .field("gateway", WiFi.gatewayIP().toString())
-    .field("dns", WiFi.dnsIP().toString());
+      .field("ip_address", WiFi.localIP().toString())
+      .field("signal_strength_dbm", WiFi.RSSI())
+      .field("mac_address", WiFi.macAddress())
+      .field("gateway", WiFi.gatewayIP().toString())
+      .field("dns", WiFi.dnsIP().toString());
 }
 
 void tool_system_status(mcp_response &response)
 {
-  auto internal_temperature = (temprature_sens_read() - 32) / 1.8;
-
   // Human-readable text summary
   std::string text =
       "Uptime: " + std::to_string(millis() / 1000) + " seconds\n"
@@ -567,25 +588,29 @@ void tool_system_status(mcp_response &response)
                                                  "SDK Version: " +
       std::string(ESP.getSdkVersion()) + "\n"
                                          "Reset Reason: " +
-      std::to_string(esp_reset_reason()) + "\n"
-                                           "Internal Temperature: " +
-      std::string(String(internal_temperature, 2).c_str()) + " °C\n";
+      std::to_string(esp_reset_reason()) + "\n";
+
+  // Not every board has a usable internal temperature sensor
+  auto celsius = temperatureRead();
+  if (!std::isnan(celsius))
+    text += "Internal Temperature: " + std::string(String(celsius, 2).c_str()) + " °C\n";
 
   // Text summary plus the parameters individually as structuredContent (MCP 2025-06-18+)
   mcp_response_schema r(response);
   r.text(text)
-    .field("uptime_seconds", millis() / 1000)
-    .field("free_heap_bytes", ESP.getFreeHeap())
-    .field("min_free_heap_bytes", ESP.getMinFreeHeap())
-    .field("max_alloc_heap_bytes", ESP.getMaxAllocHeap())
-    .field("cpu_frequency_mhz", getCpuFrequencyMhz())
-    .field("flash_size_bytes", ESP.getFlashChipSize())
-    .field("flash_speed_hz", ESP.getFlashChipSpeed())
-    .field("sketch_size_bytes", ESP.getSketchSize())
-    .field("free_sketch_space_bytes", ESP.getFreeSketchSpace())
-    .field("sdk_version", ESP.getSdkVersion())
-    .field("reset_reason", esp_reset_reason())
-    .field("internal_temperature_c", internal_temperature);
+      .field("uptime_seconds", millis() / 1000)
+      .field("free_heap_bytes", ESP.getFreeHeap())
+      .field("min_free_heap_bytes", ESP.getMinFreeHeap())
+      .field("max_alloc_heap_bytes", ESP.getMaxAllocHeap())
+      .field("cpu_frequency_mhz", getCpuFrequencyMhz())
+      .field("flash_size_bytes", ESP.getFlashChipSize())
+      .field("flash_speed_hz", ESP.getFlashChipSpeed())
+      .field("sketch_size_bytes", ESP.getSketchSize())
+      .field("free_sketch_space_bytes", ESP.getFreeSketchSpace())
+      .field("sdk_version", ESP.getSdkVersion())
+      .field("reset_reason", esp_reset_reason());
+  if (!std::isnan(celsius))
+    r.field("internal_temperature_c", celsius);
 }
 
 void tool_gpio(JsonObject arguments, mcp_response &response)
@@ -596,8 +621,8 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
   if (channel_it == gpio_pwm_channels.end())
   {
     mcp_schema_error(response)
-      .code(error_code::invalid_params)
-      .message("Invalid or missing pin. Valid pins: 2, 12, 13, 14, 15.");
+        .code(error_code::invalid_params)
+        .message("Invalid or missing pin. Valid pins: 2, 12, 13, 14, 15.");
     return;
   }
 
@@ -605,8 +630,8 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
   if (arguments["mode"].isNull())
   {
     mcp_schema_error(response)
-      .code(error_code::invalid_params)
-      .message("Mode is required. Valid modes: di (digital input), ai (analog input), do (digital output), ao (analog output).");
+        .code(error_code::invalid_params)
+        .message("Mode is required. Valid modes: di (digital input), ai (analog input), do (digital output), ao (analog output).");
     return;
   }
   auto mode = arguments["mode"].as<std::string>();
@@ -620,9 +645,9 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
     auto text = std::string("Pin GPIO") + std::to_string(pin) + " is digital input, level: " + (state ? "HIGH (true)" : "LOW (false)");
     mcp_response_schema r(response);
     r.text(text)
-      .field("pin", pin)
-      .field("mode", "di")
-      .field("value", state);
+        .field("pin", pin)
+        .field("mode", "di")
+        .field("value", state);
   }
   else if (mode == "ai")
   {
@@ -641,18 +666,18 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
     auto text = std::string("Pin GPIO") + std::to_string(pin) + " is analog input, value: " + std::to_string((int)(percent + 0.5f)) + "% (" + std::to_string(milli_volts) + " mV)";
     mcp_response_schema r(response);
     r.text(text)
-      .field("pin", pin)
-      .field("mode", "ai")
-      .field("value", percent)
-      .field("millivolts", milli_volts);
+        .field("pin", pin)
+        .field("mode", "ai")
+        .field("value", percent)
+        .field("millivolts", milli_volts);
   }
   else if (mode == "do")
   {
     if (arguments["value"].isNull())
     {
       mcp_schema_error(response)
-        .code(error_code::invalid_params)
-        .message("Value (true/false) is required for do mode.");
+          .code(error_code::invalid_params)
+          .message("Value (true/false) is required for do mode.");
       return;
     }
     auto state = arguments["value"].as<bool>();
@@ -662,25 +687,25 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
     auto text = std::string("Pin GPIO") + std::to_string(pin) + " set to " + (state ? "HIGH (true)" : "LOW (false)");
     mcp_response_schema r(response);
     r.text(text)
-      .field("pin", pin)
-      .field("mode", "do")
-      .field("value", state);
+        .field("pin", pin)
+        .field("mode", "do")
+        .field("value", state);
   }
   else if (mode == "ao")
   {
     if (arguments["value"].isNull())
     {
       mcp_schema_error(response)
-        .code(error_code::invalid_params)
-        .message("Value (0-100, duty cycle percentage) is required for ao mode.");
+          .code(error_code::invalid_params)
+          .message("Value (0-100, duty cycle percentage) is required for ao mode.");
       return;
     }
     auto percent = arguments["value"].as<float>();
     if (percent < 0.0f || percent > 100.0f)
     {
       mcp_schema_error(response)
-        .code(error_code::invalid_params)
-        .message("Value must be between 0 and 100 for ao mode.");
+          .code(error_code::invalid_params)
+          .message("Value must be between 0 and 100 for ao mode.");
       return;
     }
 
@@ -698,11 +723,11 @@ void tool_gpio(JsonObject arguments, mcp_response &response)
     auto text = std::string("Pin GPIO") + std::to_string(pin) + " PWM duty set to " + format_float(percent) + "% (duty " + format_float(duty) + "/" + std::to_string(GPIO_PWM_MAX_DUTY) + ")";
     mcp_response_schema r(response);
     r.text(text)
-      .field("pin", pin)
-      .field("mode", "ao")
-      .field("value", percent)
-      .field("duty", duty)
-      .field("duty_max", GPIO_PWM_MAX_DUTY);
+        .field("pin", pin)
+        .field("mode", "ao")
+        .field("value", percent)
+        .field("duty", duty)
+        .field("duty_max", GPIO_PWM_MAX_DUTY);
   }
   else
   {
@@ -735,12 +760,12 @@ void handle_tools_call(const mcp_request &request, mcp_response &response)
     // Tool not found, set error
     if (tool_name.empty())
       mcp_schema_error(response)
-        .code(error_code::invalid_request)
-        .message("Tool name is required");
+          .code(error_code::invalid_request)
+          .message("Tool name is required");
     else
       mcp_schema_error(response)
-        .code(error_code::method_not_found)
-        .message("Unknown tool: " + tool_name);
+          .code(error_code::method_not_found)
+          .message("Unknown tool: " + tool_name);
   }
 }
 
@@ -807,8 +832,8 @@ void handleRoot()
       handle_tools_call(mcp_request, mcp_response);
     else
       mcp_schema_error(mcp_response)
-        .code(error_code::method_not_found)
-        .message("Method not found: " + mcp_request.method());
+          .code(error_code::method_not_found)
+          .message("Method not found: " + mcp_request.method());
   }
   catch (const mcp_exception &e)
   {
@@ -853,11 +878,17 @@ void setup()
 
   Serial.begin(115200);
 
-  // Initialize LED GPIOs
-  pinMode(LED_GPIO, OUTPUT);
-  digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
-  pinMode(FLASH_GPIO, OUTPUT);
-  digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
+  // Initialize the LED GPIOs, if the board has them fitted
+  if (has_user_led)
+  {
+    pinMode(LED_GPIO, OUTPUT);
+    digitalWrite(LED_GPIO, LED_ON_LEVEL == LOW ? HIGH : LOW); // Start with LED off
+  }
+  if (has_flash_led)
+  {
+    pinMode(FLASH_GPIO, OUTPUT);
+    digitalWrite(FLASH_GPIO, FLASH_ON_LEVEL == LOW ? HIGH : LOW); // Start with flash off
+  }
 
   log_d("CPU Freq: %d Mhz", getCpuFrequencyMhz());
   log_d("Free heap: %d bytes", ESP.getFreeHeap());
