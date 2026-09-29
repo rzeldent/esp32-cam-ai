@@ -8,7 +8,29 @@ jobs:
 
     strategy:
       matrix:
-        environment: [esp32cam-release, esp32cam-debug]
+        environment:
+          - esp32cam_ai_thinker
+          - esp32cam_espressif_esp_eye
+          - esp32cam_espressif_esp32s2_cam_board
+          - esp32cam_espressif_esp32s2_cam_header
+          - esp32cam_espressif_esp32s3_cam_lcd
+          - esp32cam_espressif_esp32s3_eye
+          - esp32cam_freenove_s3_wroom_n8r8
+          - esp32cam_freenove_wrover_kit
+          - esp32cam_m5stack_atoms3r
+          - esp32cam_m5stack_camera
+          - esp32cam_m5stack_camera_psram
+          - esp32cam_m5stack_esp32cam
+          - esp32cam_m5stack_m5poecam_w
+          - esp32cam_m5stack_unitcam
+          - esp32cam_m5stack_unitcams3
+          - esp32cam_m5stack_wide
+          - esp32cam_s3_cam_v3
+          - esp32cam_s3_wroom_n16r8
+          - esp32cam_seeed_xiao_esp32s3_sense
+          - esp32cam_ttgo_t_camera
+          - esp32cam_ttgo_t_journal
+          - m5stack-timer-cam
 
     steps:
       - uses: actions/checkout@v7
