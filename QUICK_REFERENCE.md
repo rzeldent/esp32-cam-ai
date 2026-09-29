@@ -17,15 +17,15 @@ pio device monitor
 
 ### Basic Configuration
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root (or use the template `env.template`):
 
 ```properties
 # .env file
-WIFI_SSID="YourWiFiNetwork"
-WIFI_PASSWORD="YourPassword"
+WIFI_SSID=
+WIFI_PASSWORD=
 ```
 
-**Note**: The `.env` file is required for building. GPIO pins are pre-configured in `platformio.ini`.
+**Note**: The `.env` file is required for building. Camera, LED and flash pins are defined by the selected board in `boards/*.json`.
 
 ### Camera Orientation
 
@@ -43,7 +43,7 @@ WIFI_PASSWORD="YourPassword"
 | `led` | `on`: true/false | Control built-in LED |
 | `flash` | `duration`: 5-100ms | Trigger camera flash |
 | `capture` | `flash`: true/false, `frame_size`, `quality`, `whitebalance`, `pixelformat` | Take photo with optional flash |
-| `gpio` | `pin`: 2,12,13,14,15; `mode`: di/ai/do/ao; `value`: bool or 0-100 (float, sub-1% ok) | Read/write GPIO pins |
+| `gpio` | `pin`: any pin available on the board (camera pins excluded); `mode`: di/ai/do/ao; `value`: bool or 0-100 (float, sub-1% ok) | Read/write GPIO pins |
 | `wifi_status` | None | Get network information |
 | `system_status` | None | Get system diagnostics |
 
@@ -56,7 +56,7 @@ The `system_status` tool returns comprehensive diagnostic information about the 
 - **CPU Frequency**: Operating frequency in MHz (typically 240 MHz)
 - **Flash Size**: Total flash memory size in bytes (typically 4,194,304 bytes = 4MB)
 - **Flash Speed**: Flash memory clock speed in Hz (typically 40,000,000 Hz = 40MHz)
-- **Internal Temperature**: ESP32 chip temperature in Celsius (normal range: 40-75°C)
+- **Internal Temperature**: chip temperature in Celsius (normal range: 40-75°C), read with the Arduino core `temperatureRead()`; **only reported by chips with an internal sensor** — the field is omitted otherwise
 
 ### Memory Statistics
 
@@ -84,6 +84,10 @@ The `system_status` tool returns comprehensive diagnostic information about the 
   - Failure: "No (code = 0x[hex])" where hex codes indicate specific camera errors
 
 ### Temperature Monitoring
+
+`Internal Temperature` / `internal_temperature_c` is only present when the chip can
+report it (`temperatureRead()` returns `NAN` otherwise), so handle a missing field
+instead of assuming a value.
 
 - **Normal Operation**: 40-60°C during typical use
 - **Heavy Load**: 60-75°C during intensive operations (camera capture, WiFi activity)
@@ -531,12 +535,19 @@ Min free heap: [bytes] bytes
 
 ### Custom GPIO Pins
 
+LED and flash pins come from the board definition in `boards/*.json` (`USER_LED_GPIO`,
+`FLASH_LED_GPIO`). Override them without touching the board file:
+
 ```ini
 # In platformio.ini
-build_flags = 
-    -DLED_GPIO=12      # Custom LED pin
-    -DFLASH_GPIO=14    # Custom flash pin
+build_flags =
+    -DLED_GPIO=12      # Overrides USER_LED_GPIO
+    -DFLASH_GPIO=14    # Overrides FLASH_LED_GPIO
 ```
+
+The pins accepted by the `gpio` tool are derived from the chip and the board
+(`di`: any valid GPIO, `ai`: ADC capable, `do`/`ao`: output capable; camera pins are
+excluded). See the tool description for the list on your board.
 
 ## Integration Tips
 

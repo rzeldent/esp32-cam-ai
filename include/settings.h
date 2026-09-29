@@ -9,7 +9,7 @@ constexpr auto MCP_CAPTURE_PIXELFORMAT = PIXFORMAT_JPEG;
 // Default resolution for MCP "capture" tool photos (any advertised frame size is honored)
 constexpr auto MCP_CAPTURE_FRAMESIZE = FRAMESIZE_VGA;
 // Default JPEG quality (1-100) for MCP "capture" tool photos
-constexpr auto MCP_CAPTURE_QUALITY = 20;
+constexpr auto MCP_CAPTURE_JPEG_QUALITY = 20;
 // Default white balance mode for MCP "capture" tool photos (0=auto, 1=incandescent, 2=fluorescent, 3=warm fluorescent, 4=daylight, 5=cloudy daylight, 6=twilight, 7=shade)
 constexpr auto MCP_CAPTURE_WB_MODE = 0;
 

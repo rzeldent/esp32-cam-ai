@@ -173,7 +173,13 @@ Serial debugging throughout the application using the log_ macros
 
 ### Complete Parameter Reference
 
-The `gpio` tool controls the GPIO pins of the ESP32-CAM. Valid pins are **GPIO2, GPIO12, GPIO13, GPIO14, and GPIO15**. Each pin can be configured in one of four modes:
+The `gpio` tool controls the GPIO pins of the ESP32-CAM. The usable pins are derived from the selected board (`boards/*.json`) and the chip capabilities instead of a fixed list:
+
+- the pin must exist on the chip (`pin < SOC_GPIO_PIN_COUNT` and `digitalPinIsValid()`),
+- the pins wired to the camera on that board are reserved (`CAMERA_CONFIG_PIN_*`),
+- the mode must be supported by the pin: `ai` needs an ADC channel (`digitalPinToAnalogChannel() >= 0`), `do` and `ao` need an output capable pin (`digitalPinCanOutput()`).
+
+The resulting list is advertised in the tool description and repeated in the error message when an unavailable pin is requested. Each pin can be configured in one of four modes:
 
 #### Modes
 
@@ -184,13 +190,14 @@ The `gpio` tool controls the GPIO pins of the ESP32-CAM. Valid pins are **GPIO2,
 
 #### Implementation Details
 
-- Each pin is mapped to a dedicated LEDC channel (10-15) for analog output, using high-speed group 1 (timers 1-3). These never collide with the camera's XCLK PWM, which uses low-speed group 0 (timer 0 or 1, channel 0 or 1).
+- Analog output allocates a LEDC channel per pin on first use, starting at the highest channel and skipping the camera's XCLK channel (`CAMERA_CONFIG_LEDC_CHANNEL`). The assignment is kept for the lifetime of the device, so repeated calls reuse the same channel.
 - Analog output uses 5000 Hz with 13-bit resolution (duty 0-8191), set from the requested percentage. Duty is computed as a float so sub-1% values are usable (e.g. 0.1% ≈ 8 steps).
 - Analog input expresses the calibrated millivolt reading as a percentage of the 3300 mV reference.
 
 #### Known Limitations
 
-- All valid pins are ADC2 channels, which are **unavailable while Wi-Fi is active** (readings may be 0).
+- ADC2 channels are **unavailable while Wi-Fi is active** (readings may be 0); whether a pin is ADC capable at all depends on the chip, which is why `ai` validates `digitalPinToAnalogChannel(pin)` before reading.
+- Pins wired to the camera on the selected board, and pins the chip does not expose, can never be used.
 
 ## System Status Tool Documentation
 
@@ -203,7 +210,7 @@ The `system_status` tool provides comprehensive diagnostic data for monitoring E
 - **`CPU Frequency`**: Current processor speed (240 MHz typical)
 - **`Flash Size`**: Total flash memory (4,194,304 bytes = 4MB typical)
 - **`Flash Speed`**: Flash memory interface speed (40,000,000 Hz = 40MHz typical)
-- **`Internal Temperature`**: ESP32 die temperature in Celsius (calculated from internal sensor)
+- **`Internal Temperature`**: die temperature in Celsius, read through the Arduino core helper `temperatureRead()`. Only chips with a usable internal sensor report it; the field is omitted otherwise (see Temperature Analysis).
 
 #### Memory Management
 
@@ -233,8 +240,15 @@ The `system_status` tool provides comprehensive diagnostic data for monitoring E
 #### Temperature Analysis
 
 ```cpp
-auto internal_temperature = (temprature_sens_read() - 32) / 1.8;
+// Reads the internal temperature in °C, returns false when it is not available
+static bool read_internal_temperature(float &celsius)
+{
+  celsius = temperatureRead();
+  return !std::isnan(celsius);
+}
 ```
+
+`temperatureRead()` is the Arduino core helper for the internal sensor (`cores/esp32/esp32-hal-misc.c`): on the classic ESP32 it wraps the undocumented `temprature_sens_read()` ROM export (the typo is upstream's and no header declares it, which previously caused link errors on the other targets), on ESP32-S2/S3/C3 it uses the ESP-IDF `temp_sensor` driver. It returns `NAN` when the chip cannot report a temperature, in which case `system_status` leaves `internal_temperature_c` out of both the text summary and `structuredContent`, so clients must treat that field as optional.
 
 - **Normal Operation**: 40-60°C during typical WiFi and camera operations
 - **Heavy Load**: 60-75°C during intensive processing (continuous capture, high WiFi traffic)
