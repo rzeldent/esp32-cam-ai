@@ -165,14 +165,20 @@ Currently only the AI thinker is enabled. This can in the future be extended to 
 
 ### GPIO Configuration
 
-Configure LED and Flash pins in your build flags:
+LED and flash pins come from the selected board definition in `boards/*.json` (`USER_LED_GPIO`, `USER_LED_ON_LEVEL` and `FLASH_LED_GPIO`), so no build flags are
+required. `include/board_config.h` maps them onto the `LED_GPIO` / `FLASH_GPIO` names used by the code and derives `has_user_led` / `has_flash_led`; a board that declares a
+pin as `GPIO_NUM_NC` has no such LED, and the `led` / `flash` tools return an error instead of driving a pin.
+
+The `gpio` tool is not bound to a fixed list either: it accepts every GPIO the chip exposes that is not already wired to the camera, see [GPIO Control](#gpio-control).
+
+To override a pin without editing the board definition, define the project flag in `platformio.ini`:
 
 ```ini
-build_flags = 
-    -DLED_GPIO=33         # Built-in LED pin
-    -DLED_ON_LEVEL=LOW    # GPIO level for On
-    -DFLASH_GPIO=4        # Flash LED pin
-    -DFLASH_ON_LEVEL=HIGH # GPIO level for On
+build_flags =
+    -DLED_GPIO=33         # Overrides USER_LED_GPIO
+    -DLED_ON_LEVEL=LOW    # GPIO level for on
+    -DFLASH_GPIO=4        # Overrides FLASH_LED_GPIO
+    -DFLASH_ON_LEVEL=HIGH # GPIO level for on
 ```
 
 ## MCP Tools Reference
@@ -221,11 +227,23 @@ Triggers the camera flash for a specified duration.
 
 ### GPIO Control
 
-Controls the GPIO pins of the ESP32-CAM. Valid pins: **2, 12, 13, 14, 15**.
+Controls the GPIO pins of the ESP32-CAM. The usable pins are **derived from the
+selected board and the chip**, not from a fixed list:
+
+- pins that do not exist on the chip are rejected (`SOC_GPIO_PIN_COUNT`, `digitalPinIsValid()`),
+- the pins wired to the camera are reserved on that board (`CAMERA_CONFIG_PIN_*` from `boards/*.json`),
+- each mode additionally requires the matching capability: `ai` needs an ADC channel
+  (`digitalPinToAnalogChannel() >= 0`), `do` and `ao` need an output capable pin
+  (`digitalPinCanOutput()`).
+
+The pins available on the connected board are advertised in the `gpio` tool
+description (`tools/list`), for example on the AI-Thinker ESP32-CAM: `0, 2, 4, 5, 12,
+13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33`. Requesting a pin outside
+that list returns an error which repeats the available pins.
 
 **Parameters:**
 
-- `pin` (required): GPIO pin number. Valid pins: `2`, `12`, `13`, `14`, `15`
+- `pin` (required): GPIO pin number, which must be available on the selected board
 - `mode` (required): One of:
   - `di` (digital input) — returns `value` `true`/`false` from the pin's logical level
   - `ai` (analog input) — returns `value` `0-100` (percentage of the calibrated max input, via `analogReadMilliVolts`)
@@ -236,6 +254,8 @@ Controls the GPIO pins of the ESP32-CAM. Valid pins: **2, 12, 13, 14, 15**.
 **Notes:**
 
 - Analog input pins are ADC2 channels, which are unavailable while Wi-Fi is active (readings may be 0).
+- `ao` allocates a free LEDC (PWM) channel per pin on first use, taking the highest
+  channel first, so the camera XCLK PWM channel is never touched.
 
 **Examples:**
 
@@ -333,13 +353,18 @@ Provides comprehensive system diagnostics and health monitoring.
 - **Uptime**: Time since last boot in seconds
 - **SDK Version**: ESP-IDF framework version
 - **Reset Reason**: Why the system last restarted (1=power-on, 2=external reset, 3=software reset, 12=brownout, 14=watchdog)
-- **Internal Temperature**: ESP32 chip temperature in Celsius
+- **Internal Temperature**: chip temperature in Celsius (omitted on chips without a usable internal sensor)
 
 **Device Status:**
 
 - **Camera Initialized**: Camera readiness status with error codes if failed
 
 **Temperature Monitoring Guidelines:**
+
+The reading comes from the Arduino core helper `temperatureRead()`: on the classic
+ESP32 it wraps the undocumented ROM temperature sensor, on ESP32-S2/S3/C3 the ESP-IDF
+`temp_sensor` driver. Chips that cannot report a temperature omit
+`internal_temperature_c` entirely, so treat it as an optional field.
 
 - Normal: 40-60°C | Heavy Load: 60-75°C | Warning: >75°C | Critical: >85°C
 
